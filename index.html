@@ -71,7 +71,12 @@
         const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#64748b', '#14b8a6'];
         const MONTH_NAMES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
-        // --- Utilitários Protegidos (Anti-Crash) ---
+        // --- Utilitários Protegidos (Anti-Crash & Acentos) ---
+        const removeAccents = (str) => {
+            if (!str) return '';
+            return String(str).normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        };
+
         const parseCSV = (text) => {
             const lines = text.split(/\r?\n/);
             if (lines.length === 0) return [];
@@ -141,7 +146,9 @@
                     if (hLower === 'month' || hLower === 'mes') obj._month = val;
                 }
 
-                let rawDate = obj['Date'] || obj['date'] || obj['Data'] || obj['data'] || '';
+                let rawDate = obj['Date'] || obj['date'] || obj['Data'] || obj['data'] || obj['DATA'] || obj['DATE'] || '';
+                obj._rawDate = rawDate;
+
                 if (rawDate && (!obj._year || !obj._month)) {
                     if (rawDate.match(/^\d{2}\/\d{2}\/\d{4}/)) {
                         const parts = rawDate.split('/');
@@ -195,7 +202,15 @@
             return strVal.length > 20 ? strVal.substring(0, 20) + '...' : strVal;
         };
 
-        // --- Renderizadores Puros de Barras (Safeguard) ---
+        const getRankBadge = (rank) => {
+            if (!rank) return null;
+            if (rank <= 20) return <span className="bg-amber-100 text-amber-700 border border-amber-200 px-2 py-0.5 rounded text-[10px] font-black shrink-0">TOP 20 (🏆 #{rank})</span>;
+            if (rank <= 50) return <span className="bg-blue-100 text-blue-700 border border-blue-200 px-2 py-0.5 rounded text-[10px] font-black shrink-0">TOP 50 (⭐ #{rank})</span>;
+            if (rank <= 100) return <span className="bg-emerald-100 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded text-[10px] font-black shrink-0">TOP 100 (🚀 #{rank})</span>;
+            return <span className="bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded text-[10px] font-black shrink-0">RANK #{rank}</span>;
+        };
+
+        // --- Renderizadores Puros de Barras ---
         const renderProductBarLabel = ({ x, y, width, height, value }) => {
             if (value === undefined || value === null) return null;
             const numVal = Number(value) || 0;
@@ -215,15 +230,15 @@
         // --- Input de Pesquisa Anti-Lag com Botão "X" ---
         const DebouncedInput = ({ value, onChange, placeholder, icon }) => {
             const [localVal, setLocalVal] = useState(value || '');
+            const onChangeRef = useRef(onChange);
 
+            useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
             useEffect(() => { setLocalVal(value || ''); }, [value]);
 
             useEffect(() => {
-                const id = setTimeout(() => {
-                    if (value !== localVal) onChange(localVal);
-                }, 300);
+                const id = setTimeout(() => { onChangeRef.current(localVal); }, 300);
                 return () => clearTimeout(id);
-            }, [localVal, value, onChange]);
+            }, [localVal]);
 
             return (
                 <div className="relative flex items-center h-[34px]">
@@ -236,7 +251,7 @@
                         className="w-full h-full pl-9 pr-9 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500 transition-all text-slate-700" 
                     />
                     {localVal && (
-                        <button onClick={() => { setLocalVal(''); onChange(''); }} className="absolute right-0 w-9 h-full flex items-center justify-center text-slate-400 hover:text-rose-500 transition-colors rounded-r-xl">
+                        <button onClick={() => { setLocalVal(''); onChangeRef.current(''); }} className="absolute right-0 w-9 h-full flex items-center justify-center text-slate-400 hover:text-rose-500 transition-colors rounded-r-xl">
                             <Icon name="X" size={14}/>
                         </button>
                     )}
@@ -244,7 +259,7 @@
             );
         };
 
-        // --- Custom Single Select para Modais (Substitui Datalist) ---
+        // --- Custom Single Select para Modais ---
         const CustomSingleSelect = ({ label, options, selected, onChange, placeholder, searchable = false }) => {
             const [isOpen, setIsOpen] = useState(false);
             const [searchTerm, setSearchTerm] = useState('');
@@ -257,7 +272,10 @@
                 return () => document.removeEventListener('mousedown', handleClickOutside);
             }, []);
 
-            const filteredOptions = searchable && searchTerm ? safeOptions.filter(o => String(o.label || '').toLowerCase().includes(searchTerm.toLowerCase())) : safeOptions;
+            const filteredOptions = searchable && searchTerm 
+                ? safeOptions.filter(o => removeAccents(String(o.label || '').toLowerCase()).includes(removeAccents(searchTerm.toLowerCase()))) 
+                : safeOptions;
+                
             const selectedLabel = safeOptions.find(o => o.value === selected)?.label || placeholder;
 
             return (
@@ -265,11 +283,11 @@
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">{label}</label>
                     <div className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700 cursor-pointer flex justify-between items-center hover:bg-slate-50 transition-colors shadow-sm h-[34px]"
                          onClick={() => setIsOpen(!isOpen)}>
-                        <span className="truncate max-w-[200px]" title={selectedLabel}>{selectedLabel}</span>
+                        <span className="truncate max-w-[300px]" title={selectedLabel}>{selectedLabel}</span>
                         <Icon name="ChevronDown" size={14} className="text-slate-400 shrink-0 ml-2" />
                     </div>
                     {isOpen && (
-                        <div className="absolute top-full left-0 w-full min-w-[280px] mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-50 max-h-60 flex flex-col overflow-hidden">
+                        <div className="absolute top-full left-0 w-full min-w-[320px] mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-50 max-h-60 flex flex-col overflow-hidden">
                             {searchable && (
                                 <div className="p-2 border-b border-slate-100 bg-slate-50 flex items-center relative">
                                     <Icon name="Search" size={12} className="text-slate-400 absolute left-4 pointer-events-none" />
@@ -295,7 +313,7 @@
             );
         };
 
-        // --- MultiSelect (Painel Principal) ---
+        // --- MultiSelect ---
         const CustomMultiSelect = ({ label, options, selected, onChange, placeholder, searchable = false }) => {
             const [isOpen, setIsOpen] = useState(false);
             const [searchTerm, setSearchTerm] = useState('');
@@ -308,7 +326,9 @@
                 return () => document.removeEventListener('mousedown', handleClickOutside);
             }, []);
 
-            const filteredOptions = searchable && searchTerm ? safeOptions.filter(o => String(o.label || '').toLowerCase().includes(searchTerm.toLowerCase())) : safeOptions;
+            const filteredOptions = searchable && searchTerm 
+                ? safeOptions.filter(o => removeAccents(String(o.label || '').toLowerCase()).includes(removeAccents(searchTerm.toLowerCase()))) 
+                : safeOptions;
 
             return (
                 <div className="relative flex flex-col gap-1.5 min-w-[120px] flex-1" ref={ref}>
@@ -351,11 +371,11 @@
             );
         };
 
-        const GrowthBadge = ({ growth, curLabel, prevLabel, invertColors = false }) => {
+        const GrowthBadge = ({ growth, curLabel, prevLabel, invertColors = false, timeMode = 'UDM' }) => {
             if (growth === null || growth === undefined) {
                 return (
                     <div className="mt-3 flex items-center gap-1 text-[9px] font-bold text-slate-500 bg-slate-50 w-fit px-2 py-0.5 rounded-full">
-                        Sem histórico de base para UDM
+                        Sem histórico de base para {timeMode}
                     </div>
                 );
             }
@@ -368,12 +388,12 @@
             
             return (
                 <div className={`mt-3 flex items-center gap-1 text-[9px] font-bold w-fit px-2 py-0.5 rounded-full ${colorClass}`} title={`${curLabel} vs ${prevLabel}`}>
-                    <Icon name={iconName} size={12} />{isPositive ? '+' : ''}{Number(growth || 0).toFixed(1)}% (Tendência UDM)
+                    <Icon name={iconName} size={12} />{isPositive ? '+' : ''}{Number(growth || 0).toFixed(1)}% (Tendência {timeMode})
                 </div>
             );
         };
 
-        // --- Caixa Explicativa Universal (Tooltip dos Gráficos Inferiores) ---
+        // --- Tooltips dos Gráficos Inferiores ---
         const CustomYoyTooltip = ({ active, payload, label, isProduct = false, yearComparison }) => {
             if (active && payload && payload.length && yearComparison) {
                 const dataObj = payload[0].payload;
@@ -382,7 +402,6 @@
                 const curQty = Number(dataObj.qtyCur) || 0;
                 const compQty = Number(dataObj.qtyComp) || 0;
                 
-                // Determina crescimento (Quantidade para produtos, Dinheiro para o resto)
                 const mainCur = isProduct ? curQty : curAmt;
                 const mainComp = isProduct ? compQty : compAmt;
                 const growth = mainComp > 0 ? ((mainCur - mainComp) / mainComp) * 100 : null;
@@ -437,11 +456,11 @@
                         </div>
                         <div className="flex flex-col gap-2.5">
                             <p className="font-bold text-slate-600 w-full flex justify-between">
-                                <span className="text-slate-400 font-medium mr-2">UDM Atual:</span> 
+                                <span className="text-slate-400 font-medium mr-2">Atual:</span> 
                                 <strong className="text-slate-900">{formatCurrency(dataObj.curVal)}</strong>
                             </p>
                             <p className="font-bold text-slate-600 w-full flex justify-between">
-                                <span className="text-slate-400 font-medium mr-2">UDM Ant.:</span> 
+                                <span className="text-slate-400 font-medium mr-2">Anterior:</span> 
                                 <strong className="text-slate-900">{formatCurrency(dataObj.compVal)}</strong>
                             </p>
                             {dataObj.growth !== null && (
@@ -470,10 +489,9 @@
             const [passwordError, setPasswordError] = useState(false);
 
             const [evolucaoMode, setEvolucaoMode] = useState('faturamento');
+            const [modalEvolucaoMode, setModalEvolucaoMode] = useState('faturamento');
+            const [timeMode, setTimeMode] = useState('UDM'); // 'UDM' ou 'YTD'
             
-            // --- ESTADOS DE PESQUISA COM DEBOUNCE (ANTI-LAG) ---
-            const [localSearchCustomer, setLocalSearchCustomer] = useState('');
-            const [localSearchProduct, setLocalSearchProduct] = useState('');
             const [localModalSearch, setLocalModalSearch] = useState('');
 
             const [modalConfig, setModalConfig] = useState({ isOpen: false, type: null }); 
@@ -487,7 +505,6 @@
 
             const [filters, setFilters] = useState({ searchCustomer: '', searchProduct: '', years: [], months: [], state: [], customerType: [], type: [], product: [] });
 
-            // --- CARREGAMENTO LOCAL EXTREMAMENTE RÁPIDO ---
             useEffect(() => {
                 const loadData = async () => {
                     try {
@@ -529,9 +546,27 @@
                 let maxDate = null;
                 for(let i=0; i<parsed.length; i++) {
                     const row = parsed[i];
-                    if (row._year && row._month) {
-                        const dt = new Date(`${row._year}-${String(row._month).padStart(2, '0')}-01T12:00:00Z`);
-                        if (!isNaN(dt) && (!maxDate || dt > maxDate)) maxDate = dt;
+                    let dt = null;
+                    
+                    if (row._rawDate) {
+                        let dtStr = String(row._rawDate).trim().split(' ')[0];
+                        if (dtStr.match(/^\d{2}\/\d{2}\/\d{4}/)) {
+                            const p = dtStr.split('/');
+                            dt = new Date(`${p[2]}-${p[1]}-${p[0]}T12:00:00Z`);
+                        } else if (dtStr.match(/^\d{4}-\d{2}-\d{2}/)) {
+                            const p = dtStr.split('-');
+                            dt = new Date(`${p[0]}-${p[1]}-${p[2]}T12:00:00Z`);
+                        } else {
+                            dt = new Date(dtStr);
+                        }
+                    }
+                    
+                    if ((!dt || isNaN(dt)) && row._year && row._month) {
+                        dt = new Date(`${row._year}-${String(row._month).padStart(2, '0')}-01T12:00:00Z`);
+                    }
+
+                    if (dt && !isNaN(dt) && (!maxDate || dt > maxDate)) {
+                        maxDate = dt;
                     }
                 }
                 
@@ -573,51 +608,54 @@
                     if (filters.product.length > 0 && !filters.product.includes(prodName)) return false;
 
                     if (filters.searchCustomer) {
-                        const term = filters.searchCustomer.toLowerCase();
-                        const cnpjL = String(item.cnpj || '').replace(/\D/g, '');
-                        const customerName = String(item._customer).toLowerCase();
-                        if (!(customerName.includes(term) || (cnpjL && String(item.cnpj || '').includes(cnpjL)))) return false;
+                        const term = removeAccents(String(filters.searchCustomer).toLowerCase().trim());
+                        const termDigits = term.replace(/\D/g, '');
+                        const customerName = removeAccents(String(item._customer).toLowerCase());
+                        const cnpjStr = String(item.cnpj || '');
+                        if (!(customerName.includes(term) || (termDigits && cnpjStr.includes(termDigits)))) return false;
                     }
                     if (filters.searchProduct) {
-                        if (!String(item._product).toLowerCase().includes(filters.searchProduct.toLowerCase())) return false;
+                        const term = removeAccents(String(filters.searchProduct).toLowerCase().trim());
+                        const pName = removeAccents(String(item._product).toLowerCase());
+                        if (!pName.includes(term)) return false;
                     }
                     
                     return true;
                 });
             }, [data, filters]);
 
-            // --- CARDS PRINCIPAIS: DADOS ESTRITOS DA SELEÇÃO ---
             const statsFiltered = useMemo(() => {
-                let fat = 0;
-                let qty = 0;
-                const cnpjs = new Set();
+                let fat = 0; let qty = 0; const cnpjs = new Set();
                 for (let i = 0; i < filteredData.length; i++) {
                     const d = filteredData[i];
-                    fat += (d._amount || 0);
-                    qty += (d._qty || 0);
+                    fat += (d._amount || 0); qty += (d._qty || 0);
                     if (d.cnpj) cnpjs.add(d.cnpj);
                 }
-                return {
-                    fat,
-                    qty,
-                    cap: cnpjs.size,
-                    precoMedio: qty > 0 ? fat / qty : 0
-                };
+                return { fat, qty, cap: cnpjs.size, precoMedio: qty > 0 ? fat / qty : 0 };
             }, [filteredData]);
 
-            // --- CARDS DE STATUS E BADGES: DADOS DA TENDÊNCIA MACRO (UDM) ---
+            // --- Lógica UDM vs YTD Estrutural ---
             const yearComparison = useMemo(() => {
                 if (!data.length || !activeYears.length) return null;
                 const refYear = Math.max(...activeYears);
                 const yearData = data.filter(d => d._year === refYear && d._month > 0);
                 const refMonth = filters.months.length > 0 ? Math.max(...filters.months.map(Number)) : (yearData.length > 0 ? Math.max(...yearData.map(d => d._month)) : 12);
                 
-                const curEndAbs = refYear * 12 + refMonth;
-                const curStartAbs = curEndAbs - 11;
-                const prevEndAbs = curEndAbs - 12;
-                const prevStartAbs = prevEndAbs - 11;
+                let curStartAbs, curEndAbs, prevStartAbs, prevEndAbs;
 
-                const formatUDM = (startAbs, endAbs) => {
+                if (timeMode === 'UDM') {
+                    curEndAbs = refYear * 12 + refMonth;
+                    curStartAbs = curEndAbs - 11;
+                    prevEndAbs = curEndAbs - 12;
+                    prevStartAbs = prevEndAbs - 11;
+                } else { // YTD
+                    curStartAbs = refYear * 12 + 1; // Jan do ano de ref
+                    curEndAbs = refYear * 12 + refMonth;
+                    prevStartAbs = (refYear - 1) * 12 + 1; // Jan do ano ant
+                    prevEndAbs = (refYear - 1) * 12 + refMonth;
+                }
+
+                const formatPeriod = (startAbs, endAbs) => {
                     const startM = ((startAbs - 1) % 12) + 1;
                     const startY = Math.floor((startAbs - 1) / 12);
                     const endM = ((endAbs - 1) % 12) + 1;
@@ -634,20 +672,32 @@
                     if (filters.product.length > 0 && !filters.product.includes(i._product)) return false;
                     
                     if (filters.searchCustomer) {
-                        const term = filters.searchCustomer.toLowerCase();
-                        const cnpjL = String(i.cnpj || '').replace(/\D/g, '');
-                        if (!(String(i._customer).toLowerCase().includes(term) || (cnpjL && String(i.cnpj || '').includes(cnpjL)))) return false;
+                        const term = removeAccents(String(filters.searchCustomer).toLowerCase().trim());
+                        const termDigits = term.replace(/\D/g, '');
+                        const customerName = removeAccents(String(i._customer).toLowerCase());
+                        const cnpjStr = String(i.cnpj || '');
+                        if (!(customerName.includes(term) || (termDigits && cnpjStr.includes(termDigits)))) return false;
                     }
-                    if (filters.searchProduct && !String(i._product).toLowerCase().includes(filters.searchProduct.toLowerCase())) return false;
+                    if (filters.searchProduct) {
+                        const term = removeAccents(String(filters.searchProduct).toLowerCase().trim());
+                        const pName = removeAccents(String(i._product).toLowerCase());
+                        if (!pName.includes(term)) return false;
+                    }
                     
                     return true;
                 });
 
-                return { curLabel: formatUDM(curStartAbs, curEndAbs), prevLabel: formatUDM(prevStartAbs, prevEndAbs), dataCur: getUdmData(curStartAbs, curEndAbs), dataComp: getUdmData(prevStartAbs, prevEndAbs), curEndAbs };
-            }, [data, filters, activeYears]);
+                return { 
+                    curLabel: formatPeriod(curStartAbs, curEndAbs), 
+                    prevLabel: formatPeriod(prevStartAbs, prevEndAbs), 
+                    dataCur: getUdmData(curStartAbs, curEndAbs), 
+                    dataComp: getUdmData(prevStartAbs, prevEndAbs), 
+                    curEndAbs 
+                };
+            }, [data, filters, activeYears, timeMode]);
 
             const metrics = useMemo(() => {
-                if (!yearComparison) return { fatCur: 0, fatComp: 0, capCur: 0, capComp: 0, novosMain: 0, perdidosMain: 0, alertaMain: 0, precoMedioCur: 0, precoMedioGrowth: null, alertaDetails: [], novosDetails: [], perdidosDetails: [], top20Details: [] };
+                if (!yearComparison) return { fatCur: 0, fatComp: 0, capCur: 0, capComp: 0, novosMain: 0, perdidosMain: 0, alertaMain: 0, precoMedioCur: 0, precoMedioGrowth: null, alertaDetails: [], novosDetails: [], perdidosDetails: [], top20Details: [], allClientsRanked: [] };
                 
                 const { dataCur, dataComp, curEndAbs } = yearComparison;
                 
@@ -735,7 +785,10 @@
                     }
                 });
                 
-                const top20Details = allClients.sort((a,b) => b.fatCur - a.fatCur).slice(0, 20);
+                const allClientsRanked = [...allClients].sort((a,b) => b.fatCur - a.fatCur);
+                allClientsRanked.forEach((c, index) => c.rank = index + 1);
+
+                const top20Details = allClientsRanked.slice(0, 20);
                 novosDetails.sort((a,b) => b.fatCur - a.fatCur);
                 perdidosDetails.sort((a,b) => b.fatComp - a.fatComp);
                 alertaDetails.sort((a,b) => b.fatCur - a.fatCur);
@@ -751,7 +804,8 @@
                     novosMain: novosDetails.length, perdidosMain: perdidosDetails.length, alertaMain: alertaMain,
                     fatNovosMain, fatPerdidosMain,
                     precoMedioCur, precoMedioGrowth,
-                    novosDetails, perdidosDetails, top20Details, alertaDetails
+                    novosDetails, perdidosDetails, top20Details, alertaDetails,
+                    allClientsRanked
                 };
             }, [yearComparison]);
 
@@ -782,8 +836,64 @@
                 return vals.length ? vals.reduce((a,b)=>a+b,0) / vals.length : null;
             }, [chartDataEvolucao, activeYears]);
 
-            // PREPARAÇÃO SEGURA E ORDENAÇÃO EXATA DAS BARRAS
-            const topProducts = useMemo(() => {
+            // --- Lógica Modais de Listagem Secundária (Raw Data/Analítico) ---
+            const baseModalDataFiltered = useMemo(() => {
+                return (filteredData || []).filter(item => {
+                    if (modalYearFilter !== 'Todos' && String(item._year) !== String(modalYearFilter)) return false;
+                    if (modalUfFilter.length > 0 && !modalUfFilter.includes(item._state)) return false;
+                    if (localModalSearch) {
+                        const term = removeAccents(String(localModalSearch).toLowerCase().trim());
+                        const termDigits = term.replace(/\D/g, '');
+                        const customerName = removeAccents(String(item._customer).toLowerCase());
+                        const cnpjStr = String(item.cnpj || '');
+                        if (!(customerName.includes(term) || (termDigits && cnpjStr.includes(termDigits)))) return false;
+                    }
+                    return true;
+                });
+            }, [filteredData, modalYearFilter, modalUfFilter, localModalSearch]);
+
+            // PREPARAÇÃO SEGURA DOS PRODUTOS
+            const produtosModalData = useMemo(() => {
+                if (!data.length || !['produtos', 'preco'].includes(modalConfig.type)) return [];
+                const pMap = new Map();
+                
+                baseModalDataFiltered.forEach(d => {
+                    const q = d._qty;
+                    if (q <= 0) return;
+                    const p = d._product;
+                    if (!pMap.has(p)) pMap.set(p, { amount: 0, qty: 0, min: Infinity, lastPrice: 0, lastDateAbs: 0, minDist: '-', minCust: '-', minDate: null, lastDateLabel: null });
+                    
+                    const entry = pMap.get(p);
+                    entry.amount += d._amount; 
+                    entry.qty += q;
+                    const unitPrice = d._amount / q;
+                    
+                    if (unitPrice < entry.min) {
+                        entry.min = unitPrice; 
+                        entry.minDist = d._distributor;
+                        entry.minCust = d._customer;
+                        entry.minDate = d._month && d._year ? `${MONTH_NAMES[d._month - 1]}/${String(d._year).slice(-2)}` : null;
+                    }
+                    
+                    const dAbs = d._year * 12 + d._month;
+                    if (dAbs >= entry.lastDateAbs) {
+                        entry.lastDateAbs = dAbs;
+                        entry.lastPrice = unitPrice;
+                        entry.lastDateLabel = d._month && d._year ? `${MONTH_NAMES[d._month - 1]}/${String(d._year).slice(-2)}` : null;
+                    }
+                });
+                return Array.from(pMap.entries()).map(([name, vals]) => ({ 
+                    name, ...vals, avg: vals.amount / vals.qty, min: vals.min === Infinity ? 0 : vals.min
+                })).sort((a, b) => modalConfig.type === 'produtos' ? b.qty - a.qty : b.amount - a.amount);
+            }, [baseModalDataFiltered, data.length, modalConfig.type]);
+
+            const precoModalData = useMemo(() => {
+                if (!data.length || modalConfig.type !== 'preco') return [];
+                return produtosModalData.slice(0, 10);
+            }, [produtosModalData, data.length, modalConfig.type]);
+
+            // PREPARAÇÃO SEGURA E ORDENAÇÃO EXATA (Listas Completas Classificadas para o YTD/UDM)
+            const fullRankedProducts = useMemo(() => {
                 if (!yearComparison) return [];
                 const m = new Map();
                 yearComparison.dataCur.forEach(d => {
@@ -798,10 +908,13 @@
                     const entry = m.get(p);
                     entry.compVal += d._amount; entry.qtyComp += d._qty;
                 });
-                return Array.from(m.entries()).map(([name, vals]) => ({ name, ...vals })).sort((a,b)=>b.qtyCur - a.qtyCur).slice(0, 10);
+                const arr = Array.from(m.entries()).map(([name, vals]) => ({ name, ...vals })).sort((a,b)=>b.qtyCur - a.qtyCur);
+                arr.forEach((p, i) => p.rank = i + 1);
+                return arr;
             }, [yearComparison]);
+            const topProducts = useMemo(() => fullRankedProducts.slice(0, 10), [fullRankedProducts]);
 
-            const topDistribuidores = useMemo(() => {
+            const fullRankedDistributors = useMemo(() => {
                 if (!yearComparison) return [];
                 const m = new Map();
                 yearComparison.dataCur.forEach(d => { 
@@ -816,26 +929,13 @@
                     const entry = m.get(n);
                     entry.compVal += d._amount; entry.qtyComp += d._qty;
                 });
-                return Array.from(m.entries()).map(([name, vals]) => ({ name, ...vals })).sort((a,b)=>b.curVal - a.curVal).slice(0, 10);
+                const arr = Array.from(m.entries()).map(([name, vals]) => ({ name, ...vals })).sort((a,b)=>b.curVal - a.curVal);
+                arr.forEach((d, i) => d.rank = i + 1);
+                return arr;
             }, [yearComparison]);
+            const topDistribuidores = useMemo(() => fullRankedDistributors.slice(0, 10), [fullRankedDistributors]);
 
-            const topClients = useMemo(() => {
-                if (!yearComparison) return [];
-                const m = new Map();
-                yearComparison.dataCur.forEach(d => { 
-                    const c = d._customer; 
-                    if(!m.has(c)) m.set(c, {curVal:0, compVal:0, qtyCur: 0, qtyComp: 0}); 
-                    const entry = m.get(c);
-                    entry.curVal += d._amount; entry.qtyCur += d._qty;
-                });
-                yearComparison.dataComp.forEach(d => { 
-                    const c = d._customer; 
-                    if(!m.has(c)) m.set(c, {curVal:0, compVal:0, qtyCur: 0, qtyComp: 0}); 
-                    const entry = m.get(c);
-                    entry.compVal += d._amount; entry.qtyComp += d._qty;
-                });
-                return Array.from(m.entries()).map(([name, vals]) => ({ name, ...vals })).sort((a,b)=>b.curVal - a.curVal).slice(0, 10);
-            }, [yearComparison]);
+            const topClients = useMemo(() => metrics.top20Details.slice(0, 10), [metrics.top20Details]);
 
             const dataUF = useMemo(() => {
                 if (!yearComparison) return [];
@@ -857,23 +957,27 @@
                 }).filter(d => d.curVal > 0).sort((a,b) => b.curVal - a.curVal);
             }, [yearComparison]);
 
-            // --- Lógica Modais ---
-            const baseModalDataFiltered = useMemo(() => {
-                return (filteredData || []).filter(item => {
-                    if (modalYearFilter !== 'Todos' && String(item._year) !== String(modalYearFilter)) return false;
-                    if (modalUfFilter.length > 0 && !modalUfFilter.includes(item._state)) return false;
-                    if (localModalSearch) {
-                        const term = String(localModalSearch).toLowerCase();
-                        const termDigits = term.replace(/\D/g, '');
-                        if (!(String(item._customer).toLowerCase().includes(term) || (termDigits && String(item.cnpj || '').includes(termDigits)))) return false;
-                    }
-                    return true;
-                });
-            }, [filteredData, modalYearFilter, modalUfFilter, localModalSearch]);
+            // Opções formatadas para os Selects Dinâmicos (Raio-X)
+            const availableModalDistributors = useMemo(() => {
+                return fullRankedDistributors.filter(d => d.name !== 'N/I' && d.name !== 'Não Informado').map(d => ({
+                    value: d.name,
+                    label: `#${d.rank} - ${d.name} (${formatCurrency(d.curVal)})`
+                }));
+            }, [fullRankedDistributors]);
 
-            const availableModalDistributors = useMemo(() => Array.from(new Set((yearComparison?.dataCur || []).map(d => d._distributor))).filter(d => d && d !== 'N/I' && d !== 'Não Informado').sort(), [yearComparison]);
-            const availableModalProducts = useMemo(() => Array.from(new Set((yearComparison?.dataCur || []).map(d => d._product))).filter(p => p && p !== 'N/I' && p !== 'Não Informado').sort(), [yearComparison]);
-            const availableModalClients = useMemo(() => Array.from(new Set((yearComparison?.dataCur || []).map(d => d._customer))).filter(c => c && c !== 'N/I' && c !== 'Não Informado').sort(), [yearComparison]);
+            const availableModalProducts = useMemo(() => {
+                return fullRankedProducts.filter(p => p.name !== 'N/I' && p.name !== 'Não Informado').map(p => ({
+                    value: p.name,
+                    label: `#${p.rank} - ${p.name} (${(p.qtyCur||0).toLocaleString('pt-BR')} un)`
+                }));
+            }, [fullRankedProducts]);
+
+            const availableModalClients = useMemo(() => {
+                return (metrics.allClientsRanked || []).filter(c => c.name && c.name !== 'N/I' && c.name !== 'Não Informado').map(c => ({
+                    value: c.name,
+                    label: `#${c.rank} - ${c.name} (${formatCurrency(c.fatCur)})`
+                }));
+            }, [metrics.allClientsRanked]);
 
             // RAIO-X DO DISTRIBUIDOR
             const distribuidorDetails = useMemo(() => {
@@ -885,6 +989,7 @@
                 const prev = yearComparison.dataComp.filter(filterDist);
                 
                 let curTotal = 0; let prevTotal = 0;
+                let curQtyTotal = 0; let prevQtyTotal = 0;
                 const clientsSet = new Set();
                 const pMap = new Map();
                 const cMap = new Map();
@@ -892,25 +997,43 @@
                 
                 cur.forEach(d => {
                     curTotal += d._amount;
+                    curQtyTotal += d._qty;
                     if(d.cnpj) clientsSet.add(d.cnpj);
-                    const p = d._product; pMap.set(p, (pMap.get(p) || 0) + d._amount);
-                    const c = d._customer; cMap.set(c, { valor: (cMap.get(c)?.valor || 0) + d._amount, state: d._state });
+                    
+                    const p = d._product; 
+                    if (!pMap.has(p)) pMap.set(p, { valor: 0, qty: 0 });
+                    pMap.get(p).valor += d._amount;
+                    pMap.get(p).qty += d._qty;
+                    
+                    const c = d._customer; 
+                    if (!cMap.has(c)) cMap.set(c, { valor: 0, qty: 0, state: d._state });
+                    cMap.get(c).valor += d._amount;
+                    cMap.get(c).qty += d._qty;
+
                     const mKey = `${d._year}-${d._month}`;
-                    if(!monthMap.has(mKey)) monthMap.set(mKey, { sort: d._year * 12 + d._month, name: `${MONTH_NAMES[d._month - 1]}/${String(d._year).slice(-2)}`, valor: 0 });
+                    if(!monthMap.has(mKey)) monthMap.set(mKey, { sort: d._year * 12 + d._month, name: `${MONTH_NAMES[d._month - 1]}/${String(d._year).slice(-2)}`, valor: 0, qty: 0 });
                     monthMap.get(mKey).valor += d._amount;
+                    monthMap.get(mKey).qty += d._qty;
                 });
-                prev.forEach(d => prevTotal += d._amount);
+                prev.forEach(d => {
+                    prevTotal += d._amount;
+                    prevQtyTotal += d._qty;
+                });
                 
                 return { 
-                    curTotal, prevTotal, capilaridade: clientsSet.size,
+                    curTotal, prevTotal, curQtyTotal, prevQtyTotal, capilaridade: clientsSet.size,
                     growth: prevTotal > 0 ? ((curTotal - prevTotal) / prevTotal) * 100 : null,
-                    topProducts: Array.from(pMap.entries()).map(([name, valor]) => ({name, valor})).sort((a,b)=>b.valor - a.valor).slice(0, 5),
-                    topClients: Array.from(cMap.entries()).map(([name, obj]) => ({name, valor: obj.valor, state: obj.state})).sort((a,b)=>b.valor - a.valor).slice(0, 10),
-                    monthlyTrend: Array.from(monthMap.values()).sort((a,b)=>a.sort - b.sort)
+                    growthQty: prevQtyTotal > 0 ? ((curQtyTotal - prevQtyTotal) / prevQtyTotal) * 100 : null,
+                    topProductsFat: Array.from(pMap.entries()).map(([name, obj]) => ({name, valor: obj.valor, qty: obj.qty})).sort((a,b)=>b.valor - a.valor).slice(0, 5),
+                    topProductsQty: Array.from(pMap.entries()).map(([name, obj]) => ({name, valor: obj.valor, qty: obj.qty})).sort((a,b)=>b.qty - a.qty).slice(0, 5),
+                    topClientsFat: Array.from(cMap.entries()).map(([name, obj]) => ({name, valor: obj.valor, qty: obj.qty, state: obj.state})).sort((a,b)=>b.valor - a.valor).slice(0, 10),
+                    topClientsQty: Array.from(cMap.entries()).map(([name, obj]) => ({name, valor: obj.valor, qty: obj.qty, state: obj.state})).sort((a,b)=>b.qty - a.qty).slice(0, 10),
+                    monthlyTrend: Array.from(monthMap.values()).sort((a,b)=>a.sort - b.sort),
+                    rank: fullRankedDistributors.find(d => d.name === dist)?.rank
                 };
-            }, [yearComparison, modalConfig.type, modalDistributorFilter, modalUfFilter]);
+            }, [yearComparison, modalConfig.type, modalDistributorFilter, modalUfFilter, fullRankedDistributors]);
 
-            // RAIO-X DO PRODUTO
+            // RAIO-X DO PRODUTO 
             const produtoDetails = useMemo(() => {
                 if (modalConfig.type !== 'produtos' || !yearComparison || !modalProductFilter) return null;
                 const prod = modalProductFilter;
@@ -933,22 +1056,36 @@
                         const dAbs = d._year * 12 + d._month;
                         if(dAbs >= lastDateAbs) { lastDateAbs = dAbs; lastPrice = px; }
                     }
-                    const dist = d._distributor; dMap.set(dist, (dMap.get(dist) || 0) + d._qty); 
-                    const cli = d._customer; cMap.set(cli, { qty: (cMap.get(cli)?.qty || 0) + d._qty, state: d._state });
+                    
+                    const dist = d._distributor; 
+                    if (!dMap.has(dist)) dMap.set(dist, { valor: 0, qty: 0 });
+                    dMap.get(dist).valor += d._amount;
+                    dMap.get(dist).qty += d._qty;
+                    
+                    const cli = d._customer; 
+                    if (!cMap.has(cli)) cMap.set(cli, { valor: 0, qty: 0, state: d._state });
+                    cMap.get(cli).valor += d._amount;
+                    cMap.get(cli).qty += d._qty;
+
                     const mKey = `${d._year}-${d._month}`;
-                    if(!monthMap.has(mKey)) monthMap.set(mKey, { sort: d._year * 12 + d._month, name: `${MONTH_NAMES[d._month - 1]}/${String(d._year).slice(-2)}`, valor: 0 });
-                    monthMap.get(mKey).valor += d._qty;
+                    if(!monthMap.has(mKey)) monthMap.set(mKey, { sort: d._year * 12 + d._month, name: `${MONTH_NAMES[d._month - 1]}/${String(d._year).slice(-2)}`, valor: 0, qty: 0 });
+                    monthMap.get(mKey).valor += d._amount;
+                    monthMap.get(mKey).qty += d._qty;
                 });
                 prev.forEach(d => { prevQty += d._qty; prevTotal += d._amount; });
                 
                 return { 
                     curQty, prevQty, curTotal, prevTotal, avgPrice: curQty > 0 ? curTotal / curQty : 0, lastPrice,
                     growth: prevQty > 0 ? ((curQty - prevQty) / prevQty) * 100 : null,
-                    topDistributors: Array.from(dMap.entries()).map(([name, valor]) => ({name, valor})).sort((a,b)=>b.valor - a.valor).slice(0, 5),
-                    topClients: Array.from(cMap.entries()).map(([name, obj]) => ({name, valor: obj.qty, state: obj.state})).sort((a,b)=>b.valor - a.valor).slice(0, 10),
-                    monthlyTrend: Array.from(monthMap.values()).sort((a,b)=>a.sort - b.sort)
+                    growthFat: prevTotal > 0 ? ((curTotal - prevTotal) / prevTotal) * 100 : null,
+                    topDistributorsFat: Array.from(dMap.entries()).map(([name, obj]) => ({name, valor: obj.valor, qty: obj.qty})).sort((a,b)=>b.valor - a.valor).slice(0, 5),
+                    topDistributorsQty: Array.from(dMap.entries()).map(([name, obj]) => ({name, valor: obj.valor, qty: obj.qty})).sort((a,b)=>b.qty - a.qty).slice(0, 5),
+                    topClientsFat: Array.from(cMap.entries()).map(([name, obj]) => ({name, valor: obj.valor, qty: obj.qty, state: obj.state})).sort((a,b)=>b.valor - a.valor).slice(0, 10),
+                    topClientsQty: Array.from(cMap.entries()).map(([name, obj]) => ({name, valor: obj.valor, qty: obj.qty, state: obj.state})).sort((a,b)=>b.qty - a.qty).slice(0, 10),
+                    monthlyTrend: Array.from(monthMap.values()).sort((a,b)=>a.sort - b.sort),
+                    rank: fullRankedProducts.find(p => p.name === prod)?.rank
                 };
-            }, [yearComparison, modalConfig.type, modalProductFilter, modalUfFilter]);
+            }, [yearComparison, modalConfig.type, modalProductFilter, modalUfFilter, fullRankedProducts]);
 
             // RAIO-X DO CLIENTE
             const clienteDetails = useMemo(() => {
@@ -960,28 +1097,47 @@
                 const prev = yearComparison.dataComp.filter(filterCli);
                 
                 let curTotal = 0; let prevTotal = 0;
+                let curQtyTotal = 0; let prevQtyTotal = 0;
                 const pMap = new Map();
                 const dMap = new Map();
                 const monthMap = new Map();
                 
                 cur.forEach(d => {
                     curTotal += d._amount;
-                    const p = d._product; pMap.set(p, (pMap.get(p) || 0) + d._amount);
-                    const dist = d._distributor; dMap.set(dist, (dMap.get(dist) || 0) + d._amount);
+                    curQtyTotal += d._qty;
+                    
+                    const p = d._product; 
+                    if (!pMap.has(p)) pMap.set(p, { valor: 0, qty: 0 });
+                    pMap.get(p).valor += d._amount;
+                    pMap.get(p).qty += d._qty;
+                    
+                    const dist = d._distributor; 
+                    if (!dMap.has(dist)) dMap.set(dist, { valor: 0, qty: 0 });
+                    dMap.get(dist).valor += d._amount;
+                    dMap.get(dist).qty += d._qty;
+
                     const mKey = `${d._year}-${d._month}`;
-                    if(!monthMap.has(mKey)) monthMap.set(mKey, { sort: d._year * 12 + d._month, name: `${MONTH_NAMES[d._month - 1]}/${String(d._year).slice(-2)}`, valor: 0 });
+                    if(!monthMap.has(mKey)) monthMap.set(mKey, { sort: d._year * 12 + d._month, name: `${MONTH_NAMES[d._month - 1]}/${String(d._year).slice(-2)}`, valor: 0, qty: 0 });
                     monthMap.get(mKey).valor += d._amount;
+                    monthMap.get(mKey).qty += d._qty;
                 });
-                prev.forEach(d => prevTotal += d._amount);
+                prev.forEach(d => {
+                    prevTotal += d._amount;
+                    prevQtyTotal += d._qty;
+                });
                 
                 return { 
-                    curTotal, prevTotal,
+                    curTotal, prevTotal, curQtyTotal, prevQtyTotal,
                     growth: prevTotal > 0 ? ((curTotal - prevTotal) / prevTotal) * 100 : null,
-                    topProducts: Array.from(pMap.entries()).map(([name, valor]) => ({name, valor})).sort((a,b)=>b.valor - a.valor).slice(0, 5),
-                    topDistributors: Array.from(dMap.entries()).map(([name, valor]) => ({name, valor})).sort((a,b)=>b.valor - a.valor).slice(0, 10),
-                    monthlyTrend: Array.from(monthMap.values()).sort((a,b)=>a.sort - b.sort)
+                    growthQty: prevQtyTotal > 0 ? ((curQtyTotal - prevQtyTotal) / prevQtyTotal) * 100 : null,
+                    topProductsFat: Array.from(pMap.entries()).map(([name, obj]) => ({name, valor: obj.valor, qty: obj.qty})).sort((a,b)=>b.valor - a.valor).slice(0, 5),
+                    topProductsQty: Array.from(pMap.entries()).map(([name, obj]) => ({name, valor: obj.valor, qty: obj.qty})).sort((a,b)=>b.qty - a.qty).slice(0, 5),
+                    topDistributorsFat: Array.from(dMap.entries()).map(([name, obj]) => ({name, valor: obj.valor, qty: obj.qty})).sort((a,b)=>b.valor - a.valor).slice(0, 10),
+                    topDistributorsQty: Array.from(dMap.entries()).map(([name, obj]) => ({name, valor: obj.valor, qty: obj.qty})).sort((a,b)=>b.qty - a.qty).slice(0, 10),
+                    monthlyTrend: Array.from(monthMap.values()).sort((a,b)=>a.sort - b.sort),
+                    rank: metrics.allClientsRanked?.find(c => c.name === cli)?.rank
                 };
-            }, [yearComparison, modalConfig.type, modalClientFilter, modalUfFilter]);
+            }, [yearComparison, modalConfig.type, modalClientFilter, modalUfFilter, metrics.allClientsRanked]);
 
             const activeModalDataList = useMemo(() => {
                 if (modalConfig.type === 'novos') return metrics.novosDetails;
@@ -990,19 +1146,23 @@
                 return [];
             }, [modalConfig.type, metrics]);
 
-            const filteredModalData = useMemo(() => { 
+            const filteredModalDataList = useMemo(() => { 
                 let result = activeModalDataList || [];
                 if (modalUfFilter.length > 0) result = result.filter(d => modalUfFilter.includes(d.state));
                 if (localModalSearch) {
-                    const term = String(localModalSearch).toLowerCase();
+                    const term = removeAccents(String(localModalSearch).toLowerCase().trim());
                     const termDigits = term.replace(/\D/g, '');
-                    result = result.filter(d => String(d.name || '').toLowerCase().includes(term) || (termDigits && String(d.cnpj || '').includes(termDigits)));
+                    result = result.filter(d => {
+                        const cName = removeAccents(String(d.name || '').toLowerCase());
+                        const cnpjStr = String(d.cnpj || '');
+                        return cName.includes(term) || (termDigits && cnpjStr.includes(termDigits));
+                    });
                 }
                 return result; 
             }, [activeModalDataList, modalUfFilter, localModalSearch]);
 
             const availableModalUfs = useMemo(() => {
-                if (['capilaridade', 'distribuidores', 'produtos', 'top'].includes(modalConfig.type)) {
+                if (['capilaridade', 'distribuidores', 'produtos', 'top', 'preco', 'analitico'].includes(modalConfig.type)) {
                     return [...new Set((filteredData || []).map(d => d._state))].filter(Boolean).sort();
                 } else {
                     return [...new Set((activeModalDataList || []).map(d => d.state))].filter(Boolean).sort();
@@ -1056,54 +1216,19 @@
                 });
             }, [baseModalDataFiltered, data.length, modalConfig.type, modalYearFilter, ufsToPlotCapilaridade]);
 
-            const produtosModalData = useMemo(() => {
-                if (!data.length || !['preco'].includes(modalConfig.type)) return [];
-                const pMap = new Map();
-                baseModalDataFiltered.forEach(d => {
-                    const q = d._qty;
-                    if (q <= 0) return;
-                    const p = d._product;
-                    if (!pMap.has(p)) pMap.set(p, { amount: 0, qty: 0, min: Infinity, lastPrice: 0, lastDateAbs: 0, minDist: '-', minCust: '-', minDate: null, lastDateLabel: null });
-                    const entry = pMap.get(p);
-                    entry.amount += d._amount; entry.qty += q;
-                    const unitPrice = d._amount / q;
-                    
-                    if (unitPrice < entry.min) {
-                        entry.min = unitPrice; entry.minDist = d._distributor; entry.minCust = d._customer;
-                        entry.minDate = d._month && d._year ? `${MONTH_NAMES[d._month - 1]}/${String(d._year).slice(-2)}` : null;
-                    }
-                    
-                    const dAbs = d._year * 12 + d._month;
-                    if (dAbs >= entry.lastDateAbs) {
-                        entry.lastDateAbs = dAbs;
-                        entry.lastPrice = unitPrice;
-                        entry.lastDateLabel = d._month && d._year ? `${MONTH_NAMES[d._month - 1]}/${String(d._year).slice(-2)}` : null;
-                    }
-                });
-                return Array.from(pMap.entries()).map(([name, vals]) => ({ 
-                    name, ...vals, avg: vals.amount / vals.qty, min: vals.min === Infinity ? 0 : vals.min, max: vals.max === -Infinity ? 0 : vals.max
-                })).sort((a, b) => b.amount - a.amount);
-            }, [baseModalDataFiltered, data.length, modalConfig.type]);
-
-            const precoModalData = useMemo(() => {
-                if (!data.length || modalConfig.type !== 'preco') return [];
-                return produtosModalData.slice(0, 10);
-            }, [produtosModalData, data.length, modalConfig.type]);
-
-
             const openModal = (type) => { 
                 setModalConfig({ isOpen: true, type }); 
                 setModalUfFilter([]); 
                 setModalYearFilter('Todos'); 
                 setLocalModalSearch(''); 
+                setModalEvolucaoMode('faturamento');
                 
                 if (type === 'distribuidores') {
-                    setModalDistributorFilter(availableModalDistributors.length > 0 ? availableModalDistributors[0] : '');
+                    setModalDistributorFilter(availableModalDistributors.length > 0 ? availableModalDistributors[0].value : '');
                 } else if (type === 'produtos') {
-                    setModalProductFilter(availableModalProducts.length > 0 ? availableModalProducts[0] : '');
+                    setModalProductFilter(availableModalProducts.length > 0 ? availableModalProducts[0].value : '');
                 } else if (type === 'top') {
-                    const topClientName = metrics.top20Details.length > 0 ? metrics.top20Details[0].name : (availableModalClients.length > 0 ? availableModalClients[0] : '');
-                    setModalClientFilter(topClientName);
+                    setModalClientFilter(availableModalClients.length > 0 ? availableModalClients[0].value : '');
                 }
             };
 
@@ -1134,20 +1259,21 @@
             };
 
             let modalTitle = ''; let modalDesc = ''; let iconColor = ''; let iconName = 'List';
-            if (modalConfig.type === 'novos') { modalTitle = `Clientes Novos (Ciclo UDM)`; modalDesc = `Sem compras nos 12 meses anteriores`; iconColor = 'text-emerald-600 bg-emerald-100'; iconName = 'UserPlus'; } 
-            else if (modalConfig.type === 'perdidos') { modalTitle = `Clientes Perdidos (Ciclo UDM)`; modalDesc = `Sem compras nos últimos 12 meses do ciclo atual`; iconColor = 'text-rose-600 bg-rose-100'; iconName = 'UserMinus'; } 
+            if (modalConfig.type === 'novos') { modalTitle = `Clientes Novos (Ciclo ${timeMode})`; modalDesc = `Sem compras no ciclo ${timeMode} anterior`; iconColor = 'text-emerald-600 bg-emerald-100'; iconName = 'UserPlus'; } 
+            else if (modalConfig.type === 'perdidos') { modalTitle = `Clientes Perdidos (Churn ${timeMode})`; modalDesc = `Sem compras neste ciclo ${timeMode} atual`; iconColor = 'text-rose-600 bg-rose-100'; iconName = 'UserMinus'; } 
             else if (modalConfig.type === 'top') { modalTitle = `Raio-X do Cliente`; modalDesc = `Comportamento, Tração e Mix de Produtos`; iconColor = 'text-fuchsia-600 bg-fuchsia-100'; iconName = 'Users'; } 
-            else if (modalConfig.type === 'alerta') { modalTitle = `Clientes Em Alerta (Ciclo UDM)`; modalDesc = `Ultrapassaram a previsão de estoque da última compra`; iconColor = 'text-amber-600 bg-amber-100'; iconName = 'Bell'; } 
+            else if (modalConfig.type === 'alerta') { modalTitle = `Clientes Em Alerta (Risco de Churn)`; modalDesc = `Ultrapassaram a previsão de estoque da última compra`; iconColor = 'text-amber-600 bg-amber-100'; iconName = 'Bell'; } 
             else if (modalConfig.type === 'capilaridade') { modalTitle = `Evolução de Capilaridade`; modalDesc = `Evolução de PDVs ativos por mês`; iconColor = 'text-slate-600 bg-slate-100'; iconName = 'TrendingUp'; } 
-            else if (modalConfig.type === 'preco') { modalTitle = `Análise de Preços (Geral)`; modalDesc = `Visão global de preços dos produtos na seleção atual`; iconColor = 'text-blue-600 bg-blue-100'; iconName = 'Package'; }
+            else if (modalConfig.type === 'preco') { modalTitle = `Análise de Preços de Produtos`; modalDesc = `Tabela rica com variação de preços da seleção atual`; iconColor = 'text-blue-600 bg-blue-100'; iconName = 'Package'; }
             else if (modalConfig.type === 'produtos') { modalTitle = `Raio-X do Produto`; modalDesc = `Desempenho de Vendas e Principais Compradores`; iconColor = 'text-indigo-600 bg-indigo-100'; iconName = 'Package'; }
             else if (modalConfig.type === 'distribuidores') { modalTitle = `Raio-X do Distribuidor`; modalDesc = `Tração, Capilaridade e Mix de Produtos`; iconColor = 'text-emerald-600 bg-emerald-100'; iconName = 'Truck'; }
+            else if (modalConfig.type === 'analitico') { modalTitle = `Visão Analítica (Raw Data)`; modalDesc = `Detalhamento linha a linha da sua seleção atual (Limitado a 500 registos para manter a performance)`; iconColor = 'text-slate-600 bg-slate-100'; iconName = 'List'; }
 
             if (isLoadingAuto) {
                 return (
                     <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
                         <Icon name="Loader2" size={48} className="text-blue-600 animate-spin mb-4" />
-                        <h2 className="text-lg font-bold text-slate-700">Processando dados na memória...</h2>
+                        <h2 className="text-lg font-bold text-slate-700">Processando matriz de dados...</h2>
                     </div>
                 );
             }
@@ -1188,8 +1314,8 @@
                 );
             }
 
-            const totalModalFatCurLocal = filteredModalData.reduce((acc, c) => acc + (Number(c.fatCur) || 0), 0);
-            const totalModalFatCompLocal = filteredModalData.reduce((acc, c) => acc + (Number(c.fatComp) || 0), 0);
+            const totalModalFatCurLocal = filteredModalDataList.reduce((acc, c) => acc + (Number(c.fatCur) || 0), 0);
+            const totalModalFatCompLocal = filteredModalDataList.reduce((acc, c) => acc + (Number(c.fatComp) || 0), 0);
 
             return (
                 <div className="max-w-[1600px] mx-auto p-4 md:p-6 text-slate-900">
@@ -1206,10 +1332,10 @@
                                     </div>
                                     <div className="flex items-end gap-3">
                                         {['distribuidores', 'produtos', 'top'].includes(modalConfig.type) ? (
-                                            <div className="flex flex-col gap-1 min-w-[200px] relative">
+                                            <div className="flex flex-col gap-1 min-w-[240px] relative">
                                                 <CustomSingleSelect 
                                                     label={modalConfig.type === 'distribuidores' ? 'Distribuidor Selecionado' : modalConfig.type === 'produtos' ? 'Produto Selecionado' : 'Cliente Selecionado'} 
-                                                    options={modalConfig.type === 'distribuidores' ? availableModalDistributors.map(d=>({label:d, value:d})) : modalConfig.type === 'produtos' ? availableModalProducts.map(p=>({label:p, value:p})) : availableModalClients.map(c=>({label:c, value:c}))} 
+                                                    options={modalConfig.type === 'distribuidores' ? availableModalDistributors : modalConfig.type === 'produtos' ? availableModalProducts : availableModalClients} 
                                                     selected={modalConfig.type === 'distribuidores' ? modalDistributorFilter : modalConfig.type === 'produtos' ? modalProductFilter : modalClientFilter} 
                                                     onChange={val => {
                                                         if(modalConfig.type === 'distribuidores') setModalDistributorFilter(val);
@@ -1222,7 +1348,7 @@
                                             </div>
                                         ) : (
                                             <>
-                                                {modalConfig.type === 'capilaridade' && (
+                                                {['capilaridade', 'preco', 'analitico'].includes(modalConfig.type) && (
                                                     <div className="flex flex-col gap-1.5 min-w-[130px]">
                                                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Filtrar Ano</label>
                                                         <div className="relative">
@@ -1235,7 +1361,7 @@
                                                     </div>
                                                 )}
                                                 <div className="flex flex-col gap-1.5 min-w-[160px]">
-                                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Buscar Cliente</label>
+                                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Buscar Livre</label>
                                                     <DebouncedInput value={localModalSearch} onChange={setLocalModalSearch} placeholder="Nome ou CNPJ..." icon="Search" />
                                                 </div>
                                             </>
@@ -1244,8 +1370,9 @@
                                         <div className="w-[150px]"><CustomMultiSelect label="Filtrar UF" options={modalUfOptionsFormatted} selected={modalUfFilter} onChange={setModalUfFilter} placeholder="Todas" searchable={true} /></div>
                                         
                                         <div className="flex items-end gap-2">
-                                            {['novos', 'perdidos', 'alerta'].includes(modalConfig.type) && <div className="flex items-center h-[34px] px-3 bg-blue-50 text-blue-600 rounded-xl border border-blue-100 text-xs font-bold shadow-sm">{Number(filteredModalData?.length || 0).toLocaleString('pt-BR')} clientes</div>}
-                                            {['preco'].includes(modalConfig.type) && <div className="flex items-center h-[34px] px-3 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100 text-xs font-bold shadow-sm">{Number(produtosModalData?.length || 0).toLocaleString('pt-BR')} produtos</div>}
+                                            {['novos', 'perdidos', 'alerta'].includes(modalConfig.type) && <div className="flex items-center h-[34px] px-3 bg-blue-50 text-blue-600 rounded-xl border border-blue-100 text-xs font-bold shadow-sm">{Number(filteredModalDataList?.length || 0).toLocaleString('pt-BR')} clientes</div>}
+                                            {['preco'].includes(modalConfig.type) && <div className="flex items-center h-[34px] px-3 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100 text-xs font-bold shadow-sm">{Number(precoModalData?.length || 0).toLocaleString('pt-BR')} produtos</div>}
+                                            {['analitico'].includes(modalConfig.type) && <div className="flex items-center h-[34px] px-3 bg-slate-100 text-slate-600 rounded-xl border border-slate-200 text-xs font-bold shadow-sm">{Number(baseModalDataFiltered?.length || 0).toLocaleString('pt-BR')} linhas</div>}
                                             <button onClick={() => setModalConfig({isOpen: false})} className="h-[34px] w-[34px] bg-white border rounded-xl flex items-center justify-center hover:text-rose-500 shadow-sm"><Icon name="X"/></button>
                                         </div>
                                     </div>
@@ -1270,9 +1397,12 @@
                                     ) : modalConfig.type === 'distribuidores' && distribuidorDetails ? (
                                         <div className="p-6">
                                             <div className="grid grid-cols-3 gap-4 mb-6">
-                                                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                                                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Fat. UDM Atual</p>
-                                                    <h3 className="text-xl font-black text-emerald-600">{formatCurrency(distribuidorDetails.curTotal)}</h3>
+                                                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm relative">
+                                                    <div className="flex justify-between items-start">
+                                                        <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Fat. {timeMode} Atual</p>
+                                                        {getRankBadge(distribuidorDetails.rank)}
+                                                    </div>
+                                                    <h3 className="text-xl font-black text-emerald-600 mt-1">{formatCurrency(distribuidorDetails.curTotal)}</h3>
                                                     <div className="mt-2 flex items-center gap-1 text-[10px] font-bold">
                                                         {distribuidorDetails.growth !== null ? (
                                                             <span className={distribuidorDetails.growth >= 0 ? 'text-emerald-500' : 'text-rose-500'}>
@@ -1283,12 +1413,12 @@
                                                 </div>
                                                 <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
                                                     <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Capilaridade</p>
-                                                    <h3 className="text-xl font-black text-slate-800">{Number(distribuidorDetails.capilaridade || 0).toLocaleString('pt-BR')} PDVs</h3>
-                                                    <p className="text-[10px] text-slate-400 font-bold mt-2">Atendidos na UDM</p>
+                                                    <h3 className="text-xl font-black text-slate-800 mt-1">{Number(distribuidorDetails.capilaridade || 0).toLocaleString('pt-BR')} PDVs</h3>
+                                                    <p className="text-[10px] text-slate-400 font-bold mt-2">Atendidos neste ciclo</p>
                                                 </div>
                                                 <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
                                                     <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Ticket Médio (PDV)</p>
-                                                    <h3 className="text-xl font-black text-slate-800">
+                                                    <h3 className="text-xl font-black text-slate-800 mt-1">
                                                         {distribuidorDetails.capilaridade > 0 ? formatCurrency(distribuidorDetails.curTotal / distribuidorDetails.capilaridade) : 'R$ 0,00'}
                                                     </h3>
                                                     <p className="text-[10px] text-slate-400 font-bold mt-2">Faturamento / Capilaridade</p>
@@ -1297,28 +1427,36 @@
 
                                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                                                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                                                    <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-wider mb-4">Tração Mensal (UDM)</h4>
+                                                    <div className="flex justify-between items-center mb-4">
+                                                        <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Evolução Mensal</h4>
+                                                        <div className="flex bg-slate-100 p-1 rounded-lg">
+                                                            <button onClick={() => setModalEvolucaoMode('faturamento')} className={`px-2 py-0.5 text-[9px] font-bold rounded-md transition-colors ${modalEvolucaoMode === 'faturamento' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>R$ Fat.</button>
+                                                            <button onClick={() => setModalEvolucaoMode('quantidade')} className={`px-2 py-0.5 text-[9px] font-bold rounded-md transition-colors ${modalEvolucaoMode === 'quantidade' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>Unidades</button>
+                                                        </div>
+                                                    </div>
                                                     <div className="h-48 w-full">
                                                         <ResponsiveContainer width="100%" height="100%">
                                                             <LineChart data={distribuidorDetails.monthlyTrend}>
                                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                                                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 600, fill: '#94a3b8'}} />
-                                                                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 600, fill: '#94a3b8'}} tickFormatter={v => formatShortNumber(v)} />
-                                                                <Tooltip formatter={(v) => [formatCurrency(v), 'Faturamento']} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', fontSize: '11px', fontWeight: 'bold'}} />
-                                                                <Line type="monotone" dataKey="valor" stroke="#10b981" strokeWidth={3} dot={{r: 3, fill: '#10b981', strokeWidth: 2, stroke: '#fff'}} />
+                                                                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 600, fill: '#94a3b8'}} tickFormatter={v => modalEvolucaoMode === 'faturamento' ? formatShortNumber(v) : (v>=1000 ? (Number(v)/1000).toFixed(1)+'k' : v)} />
+                                                                <Tooltip formatter={(v) => [modalEvolucaoMode === 'faturamento' ? formatCurrency(v) : `${Number(v).toLocaleString('pt-BR')} un`, modalEvolucaoMode === 'faturamento' ? 'Faturamento' : 'Quantidade']} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', fontSize: '11px', fontWeight: 'bold'}} />
+                                                                <Line type="monotone" dataKey={modalEvolucaoMode === 'faturamento' ? 'valor' : 'qty'} stroke="#10b981" strokeWidth={3} dot={{r: 3, fill: '#10b981', strokeWidth: 2, stroke: '#fff'}} />
                                                             </LineChart>
                                                         </ResponsiveContainer>
                                                     </div>
                                                 </div>
                                                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                                                    <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-wider mb-4">Mix de Produtos (Top 5)</h4>
+                                                    <div className="flex justify-between items-center mb-4">
+                                                        <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Mix de Produtos (Top 5)</h4>
+                                                    </div>
                                                     <div className="h-48 w-full">
                                                         <ResponsiveContainer width="100%" height="100%">
-                                                            <BarChart data={distribuidorDetails.topProducts} layout="vertical" margin={{left: 0, right: 30}}>
+                                                            <BarChart data={modalEvolucaoMode === 'faturamento' ? distribuidorDetails.topProductsFat : distribuidorDetails.topProductsQty} layout="vertical" margin={{left: 0, right: 30}}>
                                                                 <XAxis type="number" hide />
                                                                 <YAxis dataKey="name" type="category" width={100} axisLine={false} tickLine={false} tickFormatter={v => String(v).length > 15 ? String(v).substring(0,15)+'...' : v} tick={{fontSize: 9, fontWeight: 600, fill: '#64748b'}} />
-                                                                <Tooltip formatter={(v) => [formatCurrency(v), 'Faturamento']} cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', fontSize: '11px', fontWeight: 'bold'}} />
-                                                                <Bar dataKey="valor" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={12} label={({x, y, width, height, value}) => <text x={(x||0)+(width||0)+4} y={(y||0)+(height||0)/2+1} fill="#3b82f6" fontSize="9" fontWeight="bold" dominantBaseline="central">{formatShortNumber(value)}</text>} />
+                                                                <Tooltip formatter={(v) => [modalEvolucaoMode === 'faturamento' ? formatCurrency(v) : `${Number(v).toLocaleString('pt-BR')} un`, modalEvolucaoMode === 'faturamento' ? 'Faturamento' : 'Quantidade']} cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', fontSize: '11px', fontWeight: 'bold'}} />
+                                                                <Bar dataKey={modalEvolucaoMode === 'faturamento' ? 'valor' : 'qty'} fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={12} label={({x, y, width, height, value}) => <text x={(x||0)+(width||0)+4} y={(y||0)+(height||0)/2+1} fill="#3b82f6" fontSize="9" fontWeight="bold" dominantBaseline="central">{modalEvolucaoMode === 'faturamento' ? formatShortNumber(value) : `${Number(value).toLocaleString('pt-BR')} un`}</text>} />
                                                             </BarChart>
                                                         </ResponsiveContainer>
                                                     </div>
@@ -1328,17 +1466,18 @@
                                             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                                                 <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-wider p-4 border-b border-slate-100 bg-slate-50/50">Top 10 Clientes Deste Distribuidor</h4>
                                                 <table className="w-full text-left">
-                                                    <thead className="bg-white"><tr className="text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100"><th className="px-4 py-3">Cliente</th><th className="px-4 py-3 text-center">UF</th><th className="px-4 py-3 text-right">Faturamento (UDM)</th><th className="px-4 py-3 text-right">Representatividade</th></tr></thead>
+                                                    <thead className="bg-white"><tr className="text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100"><th className="px-4 py-3">Cliente</th><th className="px-4 py-3 text-center">UF</th><th className="px-4 py-3 text-right">Faturamento ({timeMode})</th><th className="px-4 py-3 text-right">Qtd. ({timeMode})</th><th className="px-4 py-3 text-right">Repres. (R$)</th></tr></thead>
                                                     <tbody>
-                                                        {distribuidorDetails.topClients.map((c, i) => (
+                                                        {(modalEvolucaoMode === 'faturamento' ? distribuidorDetails.topClientsFat : distribuidorDetails.topClientsQty).map((c, i) => (
                                                             <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/80 transition-colors">
                                                                 <td className="px-4 py-2.5 text-xs font-bold text-slate-700 truncate max-w-[200px]">{c.name}</td>
                                                                 <td className="px-4 py-2.5 text-center"><span className="bg-slate-100 text-slate-600 px-2 py-1 rounded-md text-[10px] font-bold">{c.state}</span></td>
                                                                 <td className="px-4 py-2.5 text-xs font-bold text-slate-800 text-right">{formatCurrency(c.valor)}</td>
-                                                                <td className="px-4 py-2.5 text-xs font-bold text-blue-600 text-right">{Number(((c.valor / distribuidorDetails.curTotal) * 100) || 0).toFixed(1)}%</td>
+                                                                <td className="px-4 py-2.5 text-xs font-bold text-slate-600 text-right">{Number(c.qty || 0).toLocaleString('pt-BR')} un</td>
+                                                                <td className="px-4 py-2.5 text-xs font-bold text-emerald-600 text-right">{Number(((c.valor / distribuidorDetails.curTotal) * 100) || 0).toFixed(1)}%</td>
                                                             </tr>
                                                         ))}
-                                                        {distribuidorDetails.topClients.length === 0 && <tr><td colSpan="4" className="p-4 text-center text-xs text-slate-400">Nenhum cliente encontrado.</td></tr>}
+                                                        {distribuidorDetails.topClientsFat.length === 0 && <tr><td colSpan="5" className="p-4 text-center text-xs text-slate-400">Nenhum cliente encontrado.</td></tr>}
                                                     </tbody>
                                                 </table>
                                             </div>
@@ -1346,9 +1485,12 @@
                                     ) : modalConfig.type === 'produtos' && produtoDetails ? (
                                         <div className="p-6">
                                             <div className="grid grid-cols-3 gap-4 mb-6">
-                                                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                                                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Volume UDM Atual</p>
-                                                    <h3 className="text-xl font-black text-blue-600">{Number(produtoDetails.curQty || 0).toLocaleString('pt-BR')} un</h3>
+                                                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm relative">
+                                                    <div className="flex justify-between items-start">
+                                                        <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Volume {timeMode} Atual</p>
+                                                        {getRankBadge(produtoDetails.rank)}
+                                                    </div>
+                                                    <h3 className="text-xl font-black text-blue-600 mt-1">{Number(produtoDetails.curQty || 0).toLocaleString('pt-BR')} un</h3>
                                                     <div className="mt-2 flex items-center gap-1 text-[10px] font-bold">
                                                         {produtoDetails.growth !== null ? (
                                                             <span className={produtoDetails.growth >= 0 ? 'text-emerald-500' : 'text-rose-500'}>
@@ -1358,40 +1500,55 @@
                                                     </div>
                                                 </div>
                                                 <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                                                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Receita UDM Atual</p>
-                                                    <h3 className="text-xl font-black text-slate-800">{formatCurrency(produtoDetails.curTotal)}</h3>
+                                                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Receita {timeMode} Atual</p>
+                                                    <h3 className="text-xl font-black text-slate-800 mt-1">{formatCurrency(produtoDetails.curTotal)}</h3>
+                                                    <div className="mt-2 flex items-center gap-1 text-[10px] font-bold">
+                                                        {produtoDetails.growthFat !== null ? (
+                                                            <span className={produtoDetails.growthFat >= 0 ? 'text-emerald-500' : 'text-rose-500'}>
+                                                                {produtoDetails.growthFat >= 0 ? '+' : ''}{Number(produtoDetails.growthFat || 0).toFixed(1)}% vs Ant.
+                                                            </span>
+                                                        ) : <span className="text-slate-400">Sem histórico</span>}
+                                                    </div>
                                                 </div>
                                                 <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
                                                     <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Preço Médio vs Último</p>
-                                                    <h3 className="text-xl font-black text-slate-800">R$ {Number(produtoDetails.avgPrice || 0).toFixed(2)}</h3>
+                                                    <h3 className="text-xl font-black text-slate-800 mt-1">R$ {Number(produtoDetails.avgPrice || 0).toFixed(2)}</h3>
                                                     <p className="text-[10px] text-slate-400 font-bold mt-2">Último praticado a: <span className="text-emerald-600">R$ {Number(produtoDetails.lastPrice || 0).toFixed(2)}</span></p>
                                                 </div>
                                             </div>
 
                                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                                                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                                                    <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-wider mb-4">Evolução de Volume (Mensal)</h4>
+                                                    <div className="flex justify-between items-center mb-4">
+                                                        <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Evolução Mensal</h4>
+                                                        <div className="flex bg-slate-100 p-1 rounded-lg">
+                                                            <button onClick={() => setModalEvolucaoMode('faturamento')} className={`px-2 py-0.5 text-[9px] font-bold rounded-md transition-colors ${modalEvolucaoMode === 'faturamento' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>R$ Fat.</button>
+                                                            <button onClick={() => setModalEvolucaoMode('quantidade')} className={`px-2 py-0.5 text-[9px] font-bold rounded-md transition-colors ${modalEvolucaoMode === 'quantidade' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>Unidades</button>
+                                                        </div>
+                                                    </div>
                                                     <div className="h-48 w-full">
                                                         <ResponsiveContainer width="100%" height="100%">
                                                             <LineChart data={produtoDetails.monthlyTrend}>
                                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                                                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 600, fill: '#94a3b8'}} />
-                                                                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 600, fill: '#94a3b8'}} tickFormatter={v => formatShortNumber(v)} />
-                                                                <Tooltip formatter={(v) => [`${Number(v || 0).toLocaleString('pt-BR')} un`, 'Quantidade']} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', fontSize: '11px', fontWeight: 'bold'}} />
-                                                                <Line type="monotone" dataKey="valor" stroke="#3b82f6" strokeWidth={3} dot={{r: 3, fill: '#3b82f6', strokeWidth: 2, stroke: '#fff'}} />
+                                                                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 600, fill: '#94a3b8'}} tickFormatter={v => modalEvolucaoMode === 'faturamento' ? formatShortNumber(v) : (v>=1000 ? (Number(v)/1000).toFixed(1)+'k' : v)} />
+                                                                <Tooltip formatter={(v) => [modalEvolucaoMode === 'faturamento' ? formatCurrency(v) : `${Number(v).toLocaleString('pt-BR')} un`, modalEvolucaoMode === 'faturamento' ? 'Faturamento' : 'Quantidade']} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', fontSize: '11px', fontWeight: 'bold'}} />
+                                                                <Line type="monotone" dataKey={modalEvolucaoMode === 'faturamento' ? 'valor' : 'qty'} stroke="#3b82f6" strokeWidth={3} dot={{r: 3, fill: '#3b82f6', strokeWidth: 2, stroke: '#fff'}} />
                                                             </LineChart>
                                                         </ResponsiveContainer>
                                                     </div>
                                                 </div>
                                                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                                                    <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-wider mb-4">Top Distribuidores deste Produto</h4>
+                                                    <div className="flex justify-between items-center mb-4">
+                                                        <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Top Distribuidores (Produto)</h4>
+                                                    </div>
                                                     <div className="h-48 w-full">
                                                         <ResponsiveContainer width="100%" height="100%">
-                                                            <BarChart data={produtoDetails.topDistributors} layout="vertical" margin={{left: 0, right: 40}}>
+                                                            <BarChart data={modalEvolucaoMode === 'faturamento' ? produtoDetails.topDistributorsFat : produtoDetails.topDistributorsQty} layout="vertical" margin={{left: 0, right: 40}}>
                                                                 <XAxis type="number" hide />
                                                                 <YAxis dataKey="name" type="category" width={100} axisLine={false} tickLine={false} tickFormatter={v => String(v).length > 15 ? String(v).substring(0,15)+'...' : v} tick={{fontSize: 9, fontWeight: 600, fill: '#64748b'}} />
-                                                                <Tooltip formatter={(v) => [`${Number(v || 0).toLocaleString('pt-BR')} un`, 'Quantidade']} cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', fontSize: '11px', fontWeight: 'bold'}} />
-                                                                <Bar dataKey="valor" fill="#10b981" radius={[0, 4, 4, 0]} barSize={12} label={({x, y, width, height, value}) => <text x={(x||0)+(width||0)+4} y={(y||0)+(height||0)/2+1} fill="#10b981" fontSize="9" fontWeight="bold" dominantBaseline="central">{formatShortNumber(value)}</text>} />
+                                                                <Tooltip formatter={(v) => [modalEvolucaoMode === 'faturamento' ? formatCurrency(v) : `${Number(v).toLocaleString('pt-BR')} un`, modalEvolucaoMode === 'faturamento' ? 'Faturamento' : 'Quantidade']} cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', fontSize: '11px', fontWeight: 'bold'}} />
+                                                                <Bar dataKey={modalEvolucaoMode === 'faturamento' ? 'valor' : 'qty'} fill="#10b981" radius={[0, 4, 4, 0]} barSize={12} label={({x, y, width, height, value}) => <text x={(x||0)+(width||0)+4} y={(y||0)+(height||0)/2+1} fill="#10b981" fontSize="9" fontWeight="bold" dominantBaseline="central">{modalEvolucaoMode === 'faturamento' ? formatShortNumber(value) : `${Number(value).toLocaleString('pt-BR')} un`}</text>} />
                                                             </BarChart>
                                                         </ResponsiveContainer>
                                                     </div>
@@ -1401,17 +1558,18 @@
                                             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                                                 <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-wider p-4 border-b border-slate-100 bg-slate-50/50">Top 10 Clientes Deste Produto</h4>
                                                 <table className="w-full text-left">
-                                                    <thead className="bg-white"><tr className="text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100"><th className="px-4 py-3">Cliente</th><th className="px-4 py-3 text-center">UF</th><th className="px-4 py-3 text-right">Quantidade (UDM)</th><th className="px-4 py-3 text-right">Representatividade</th></tr></thead>
+                                                    <thead className="bg-white"><tr className="text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100"><th className="px-4 py-3">Cliente</th><th className="px-4 py-3 text-center">UF</th><th className="px-4 py-3 text-right">Faturamento ({timeMode})</th><th className="px-4 py-3 text-right">Qtd. ({timeMode})</th><th className="px-4 py-3 text-right">Repres. (R$)</th></tr></thead>
                                                     <tbody>
-                                                        {produtoDetails.topClients.map((c, i) => (
+                                                        {(modalEvolucaoMode === 'faturamento' ? produtoDetails.topClientsFat : produtoDetails.topClientsQty).map((c, i) => (
                                                             <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/80 transition-colors">
                                                                 <td className="px-4 py-2.5 text-xs font-bold text-slate-700 truncate max-w-[200px]">{c.name}</td>
                                                                 <td className="px-4 py-2.5 text-center"><span className="bg-slate-100 text-slate-600 px-2 py-1 rounded-md text-[10px] font-bold">{c.state}</span></td>
-                                                                <td className="px-4 py-2.5 text-xs font-bold text-slate-800 text-right">{Number(c.valor || 0).toLocaleString('pt-BR')} un</td>
-                                                                <td className="px-4 py-2.5 text-xs font-bold text-blue-600 text-right">{Number(((c.valor / produtoDetails.curQty) * 100) || 0).toFixed(1)}%</td>
+                                                                <td className="px-4 py-2.5 text-xs font-bold text-slate-800 text-right">{formatCurrency(c.valor)}</td>
+                                                                <td className="px-4 py-2.5 text-xs font-bold text-slate-600 text-right">{Number(c.qty || 0).toLocaleString('pt-BR')} un</td>
+                                                                <td className="px-4 py-2.5 text-xs font-bold text-blue-600 text-right">{Number(((c.valor / produtoDetails.curTotal) * 100) || 0).toFixed(1)}%</td>
                                                             </tr>
                                                         ))}
-                                                        {produtoDetails.topClients.length === 0 && <tr><td colSpan="4" className="p-4 text-center text-xs text-slate-400">Nenhum cliente encontrado.</td></tr>}
+                                                        {produtoDetails.topClientsFat.length === 0 && <tr><td colSpan="5" className="p-4 text-center text-xs text-slate-400">Nenhum cliente encontrado.</td></tr>}
                                                     </tbody>
                                                 </table>
                                             </div>
@@ -1419,9 +1577,12 @@
                                     ) : modalConfig.type === 'top' && clienteDetails ? (
                                         <div className="p-6">
                                             <div className="grid grid-cols-3 gap-4 mb-6">
-                                                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                                                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Fat. UDM Atual</p>
-                                                    <h3 className="text-xl font-black text-fuchsia-600">{formatCurrency(clienteDetails.curTotal)}</h3>
+                                                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm relative">
+                                                    <div className="flex justify-between items-start">
+                                                        <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Fat. {timeMode} Atual</p>
+                                                        {getRankBadge(clienteDetails.rank)}
+                                                    </div>
+                                                    <h3 className="text-xl font-black text-fuchsia-600 mt-1">{formatCurrency(clienteDetails.curTotal)}</h3>
                                                     <div className="mt-2 flex items-center gap-1 text-[10px] font-bold">
                                                         {clienteDetails.growth !== null ? (
                                                             <span className={clienteDetails.growth >= 0 ? 'text-emerald-500' : 'text-rose-500'}>
@@ -1431,39 +1592,55 @@
                                                     </div>
                                                 </div>
                                                 <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                                                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Fat. UDM Anterior</p>
-                                                    <h3 className="text-xl font-black text-slate-800">{formatCurrency(clienteDetails.prevTotal)}</h3>
+                                                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Volume {timeMode} Atual</p>
+                                                    <h3 className="text-xl font-black text-slate-800 mt-1">{Number(clienteDetails.curQtyTotal || 0).toLocaleString('pt-BR')} un</h3>
+                                                    <div className="mt-2 flex items-center gap-1 text-[10px] font-bold">
+                                                        {clienteDetails.growthQty !== null ? (
+                                                            <span className={clienteDetails.growthQty >= 0 ? 'text-emerald-500' : 'text-rose-500'}>
+                                                                {clienteDetails.growthQty >= 0 ? '+' : ''}{Number(clienteDetails.growthQty || 0).toFixed(1)}% vs Ant.
+                                                            </span>
+                                                        ) : <span className="text-slate-400">Sem histórico</span>}
+                                                    </div>
                                                 </div>
                                                 <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                                                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Status</p>
-                                                    <h3 className="text-xl font-black text-emerald-600">{clienteDetails.prevTotal > 0 ? `${Number((((clienteDetails.curTotal-clienteDetails.prevTotal)/clienteDetails.prevTotal)*100)||0).toFixed(1)}%` : 'Novo Cliente'}</h3>
+                                                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Média Mensal</p>
+                                                    <h3 className="text-xl font-black text-slate-800 mt-1">{formatCurrency(clienteDetails.curTotal / 12)}</h3>
+                                                    <p className="text-[10px] text-slate-400 font-bold mt-2">Faturamento / 12 meses</p>
                                                 </div>
                                             </div>
 
                                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                                                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                                                    <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-wider mb-4">Evolução Mensal (UDM)</h4>
+                                                    <div className="flex justify-between items-center mb-4">
+                                                        <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Evolução Mensal</h4>
+                                                        <div className="flex bg-slate-100 p-1 rounded-lg">
+                                                            <button onClick={() => setModalEvolucaoMode('faturamento')} className={`px-2 py-0.5 text-[9px] font-bold rounded-md transition-colors ${modalEvolucaoMode === 'faturamento' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>R$ Fat.</button>
+                                                            <button onClick={() => setModalEvolucaoMode('quantidade')} className={`px-2 py-0.5 text-[9px] font-bold rounded-md transition-colors ${modalEvolucaoMode === 'quantidade' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>Unidades</button>
+                                                        </div>
+                                                    </div>
                                                     <div className="h-48 w-full">
                                                         <ResponsiveContainer width="100%" height="100%">
                                                             <LineChart data={clienteDetails.monthlyTrend}>
                                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                                                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 600, fill: '#94a3b8'}} />
-                                                                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 600, fill: '#94a3b8'}} tickFormatter={v => formatShortNumber(v)} />
-                                                                <Tooltip formatter={(v) => [formatCurrency(v), 'Faturamento']} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', fontSize: '11px', fontWeight: 'bold'}} />
-                                                                <Line type="monotone" dataKey="valor" stroke="#f59e0b" strokeWidth={3} dot={{r: 3, fill: '#f59e0b', strokeWidth: 2, stroke: '#fff'}} />
+                                                                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 600, fill: '#94a3b8'}} tickFormatter={v => modalEvolucaoMode === 'faturamento' ? formatShortNumber(v) : (v>=1000 ? (Number(v)/1000).toFixed(1)+'k' : v)} />
+                                                                <Tooltip formatter={(v) => [modalEvolucaoMode === 'faturamento' ? formatCurrency(v) : `${Number(v).toLocaleString('pt-BR')} un`, modalEvolucaoMode === 'faturamento' ? 'Faturamento' : 'Quantidade']} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', fontSize: '11px', fontWeight: 'bold'}} />
+                                                                <Line type="monotone" dataKey={modalEvolucaoMode === 'faturamento' ? 'valor' : 'qty'} stroke="#f59e0b" strokeWidth={3} dot={{r: 3, fill: '#f59e0b', strokeWidth: 2, stroke: '#fff'}} />
                                                             </LineChart>
                                                         </ResponsiveContainer>
                                                     </div>
                                                 </div>
                                                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                                                    <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-wider mb-4">Produtos Preferidos (Top 5)</h4>
+                                                    <div className="flex justify-between items-center mb-4">
+                                                        <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Produtos Preferidos (Top 5)</h4>
+                                                    </div>
                                                     <div className="h-48 w-full">
                                                         <ResponsiveContainer width="100%" height="100%">
-                                                            <BarChart data={clienteDetails.topProducts} layout="vertical" margin={{left: 0, right: 40}}>
+                                                            <BarChart data={modalEvolucaoMode === 'faturamento' ? clienteDetails.topProductsFat : clienteDetails.topProductsQty} layout="vertical" margin={{left: 0, right: 40}}>
                                                                 <XAxis type="number" hide />
                                                                 <YAxis dataKey="name" type="category" width={100} axisLine={false} tickLine={false} tickFormatter={v => String(v).length > 15 ? String(v).substring(0,15)+'...' : v} tick={{fontSize: 9, fontWeight: 600, fill: '#64748b'}} />
-                                                                <Tooltip formatter={(v) => [formatCurrency(v), 'Faturamento']} cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', fontSize: '11px', fontWeight: 'bold'}} />
-                                                                <Bar dataKey="valor" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={12} label={({x, y, width, height, value}) => <text x={(x||0)+(width||0)+4} y={(y||0)+(height||0)/2+1} fill="#3b82f6" fontSize="9" fontWeight="bold" dominantBaseline="central">{formatShortNumber(value)}</text>} />
+                                                                <Tooltip formatter={(v) => [modalEvolucaoMode === 'faturamento' ? formatCurrency(v) : `${Number(v).toLocaleString('pt-BR')} un`, modalEvolucaoMode === 'faturamento' ? 'Faturamento' : 'Quantidade']} cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', fontSize: '11px', fontWeight: 'bold'}} />
+                                                                <Bar dataKey={modalEvolucaoMode === 'faturamento' ? 'valor' : 'qty'} fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={12} label={({x, y, width, height, value}) => <text x={(x||0)+(width||0)+4} y={(y||0)+(height||0)/2+1} fill="#3b82f6" fontSize="9" fontWeight="bold" dominantBaseline="central">{modalEvolucaoMode === 'faturamento' ? formatShortNumber(value) : `${Number(value).toLocaleString('pt-BR')} un`}</text>} />
                                                             </BarChart>
                                                         </ResponsiveContainer>
                                                     </div>
@@ -1473,16 +1650,17 @@
                                             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                                                 <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-wider p-4 border-b border-slate-100 bg-slate-50/50">Distribuidores que atendem este Cliente</h4>
                                                 <table className="w-full text-left">
-                                                    <thead className="bg-white"><tr className="text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100"><th className="px-4 py-3">Distribuidor</th><th className="px-4 py-3 text-right">Faturamento (UDM)</th><th className="px-4 py-3 text-right">Representatividade</th></tr></thead>
+                                                    <thead className="bg-white"><tr className="text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100"><th className="px-4 py-3">Distribuidor</th><th className="px-4 py-3 text-right">Faturamento ({timeMode})</th><th className="px-4 py-3 text-right">Qtd. ({timeMode})</th><th className="px-4 py-3 text-right">Representatividade (R$)</th></tr></thead>
                                                     <tbody>
-                                                        {clienteDetails.topDistributors.map((c, i) => (
+                                                        {(modalEvolucaoMode === 'faturamento' ? clienteDetails.topDistributorsFat : clienteDetails.topDistributorsQty).map((c, i) => (
                                                             <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/80 transition-colors">
                                                                 <td className="px-4 py-2.5 text-xs font-bold text-slate-700 truncate max-w-[200px]">{c.name}</td>
                                                                 <td className="px-4 py-2.5 text-xs font-bold text-slate-800 text-right">{formatCurrency(c.valor)}</td>
+                                                                <td className="px-4 py-2.5 text-xs font-bold text-slate-600 text-right">{Number(c.qty || 0).toLocaleString('pt-BR')} un</td>
                                                                 <td className="px-4 py-2.5 text-xs font-bold text-emerald-600 text-right">{Number(((c.valor / clienteDetails.curTotal) * 100)||0).toFixed(1)}%</td>
                                                             </tr>
                                                         ))}
-                                                        {clienteDetails.topDistributors.length === 0 && <tr><td colSpan="3" className="p-4 text-center text-xs text-slate-400">Nenhum distribuidor encontrado.</td></tr>}
+                                                        {clienteDetails.topDistributorsFat.length === 0 && <tr><td colSpan="4" className="p-4 text-center text-xs text-slate-400">Nenhum distribuidor encontrado.</td></tr>}
                                                     </tbody>
                                                 </table>
                                             </div>
@@ -1521,6 +1699,49 @@
                                                 )}
                                             </tbody>
                                         </table>
+                                    ) : modalConfig.type === 'analitico' ? (
+                                        <table className="w-full text-left border-collapse min-w-[1200px]">
+                                            <thead className="bg-white sticky top-0 shadow-sm z-10">
+                                                <tr className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                                                    <th className="py-4 px-6 border-b border-slate-100 bg-white">Mês/Ano</th>
+                                                    <th className="py-4 px-6 border-b border-slate-100 bg-white">CNPJ</th>
+                                                    <th className="py-4 px-6 border-b border-slate-100 bg-white">Cliente</th>
+                                                    <th className="py-4 px-6 border-b border-slate-100 bg-white text-center">UF</th>
+                                                    <th className="py-4 px-6 border-b border-slate-100 bg-white">Distribuidor</th>
+                                                    <th className="py-4 px-6 border-b border-slate-100 bg-white">Produto</th>
+                                                    <th className="py-4 px-6 border-b border-slate-100 bg-white text-right">Qtd</th>
+                                                    <th className="py-4 px-6 border-b border-slate-100 bg-white text-right">Faturamento</th>
+                                                    <th className="py-4 px-6 border-b border-slate-100 bg-white text-right">Preço Unit.</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="text-sm font-semibold text-slate-600 bg-white">
+                                                {baseModalDataFiltered.slice(0, 500).map((d, idx) => (
+                                                    <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
+                                                        <td className="py-2.5 px-6 whitespace-nowrap text-xs">{String(d._month).padStart(2, '0')}/{d._year}</td>
+                                                        <td className="py-2.5 px-6 whitespace-nowrap text-xs">{d.cnpj}</td>
+                                                        <td className="py-2.5 px-6 truncate max-w-[200px] text-slate-800 font-bold" title={d._customer}>{d._customer}</td>
+                                                        <td className="py-2.5 px-6 text-center"><span className="bg-slate-100 text-slate-600 px-2 py-1 rounded-md text-[10px] font-bold">{d._state}</span></td>
+                                                        <td className="py-2.5 px-6 truncate max-w-[150px] text-xs" title={d._distributor}>{d._distributor}</td>
+                                                        <td className="py-2.5 px-6 truncate max-w-[200px] text-xs font-bold text-slate-700" title={d._product}>{d._product}</td>
+                                                        <td className="py-2.5 px-6 text-right font-bold text-slate-800">{d._qty}</td>
+                                                        <td className="py-2.5 px-6 text-right font-bold text-slate-800">{formatCurrency(d._amount)}</td>
+                                                        <td className="py-2.5 px-6 text-right font-bold text-blue-600">{d._qty > 0 ? formatCurrency(d._amount / d._qty) : '-'}</td>
+                                                    </tr>
+                                                ))}
+                                                {baseModalDataFiltered.length === 0 && (
+                                                    <tr><td colSpan={9} className="py-8 text-center text-slate-400 bg-white">Nenhum registo encontrado com os filtros atuais.</td></tr>
+                                                )}
+                                            </tbody>
+                                            {baseModalDataFiltered.length > 500 && (
+                                                <tfoot className="bg-slate-50 sticky bottom-0">
+                                                    <tr>
+                                                        <td colSpan={9} className="py-3 px-6 text-center text-xs font-bold text-slate-500">
+                                                            A mostrar os primeiros 500 registos de um total de {baseModalDataFiltered.length.toLocaleString('pt-BR')}. Refine a sua pesquisa para ver mais dados.
+                                                        </td>
+                                                    </tr>
+                                                </tfoot>
+                                            )}
+                                        </table>
                                     ) : (
                                         <table className="w-full text-left border-collapse">
                                             <thead className="bg-white sticky top-0 shadow-sm z-10">
@@ -1529,12 +1750,12 @@
                                                     {modalConfig.type === 'alerta' ? (
                                                         <><th className="py-4 px-6 border-b bg-white text-right">Média Mensal</th><th className="py-4 px-6 border-b bg-white text-center">Status Atraso</th></>
                                                     ) : (
-                                                        <><th className="py-4 px-6 border-b bg-white text-right">Fat. Atual (UDM)</th><th className="py-4 px-6 border-b bg-white text-right">Fat. Anterior (UDM)</th></>
+                                                        <><th className="py-4 px-6 border-b bg-white text-right">Fat. Atual ({timeMode})</th><th className="py-4 px-6 border-b bg-white text-right">Fat. Anterior ({timeMode})</th></>
                                                     )}
                                                 </tr>
                                             </thead>
                                             <tbody className="bg-white">
-                                                {filteredModalData.map(c => (
+                                                {filteredModalDataList.map(c => (
                                                     <tr key={c.cnpj} className="border-b hover:bg-slate-50">
                                                         <td className="py-3 px-6"><div className="font-bold text-sm truncate max-w-[250px]" title={c.name}>{c.name}</div><div className="text-[10px] text-slate-400">{c.cnpj}</div></td>
                                                         <td className="py-3 px-6 text-center"><span className="bg-slate-100 px-2 py-1 rounded text-[10px] font-bold text-slate-600">{c.state}</span></td>
@@ -1565,11 +1786,21 @@
                     {/* Cabeçalho principal */}
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                         <div>
-                            <div className="flex items-center gap-3 mb-1"><div className="w-2 h-6 bg-blue-600 rounded-full"></div><h1 className="text-2xl font-black tracking-tight text-slate-800 uppercase">Performance Comercial</h1></div>
+                            <div className="flex items-center gap-3 mb-1">
+                                <div className="w-2 h-6 bg-blue-600 rounded-full"></div>
+                                <h1 className="text-2xl font-black tracking-tight text-slate-800 uppercase">Performance Comercial</h1>
+                            </div>
                             <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Dashboard Dinâmico e Local (Ultra-Rápido)</p>
                         </div>
+                        
+                        <div className="flex items-center gap-2 bg-slate-200/50 p-1 rounded-xl border border-slate-200">
+                            <button onClick={() => setTimeMode('UDM')} className={`px-4 py-2 text-[10px] uppercase tracking-wider font-black rounded-lg transition-all ${timeMode === 'UDM' ? 'bg-white shadow-sm text-blue-700' : 'text-slate-500 hover:text-slate-700'}`}>UDM (12 Meses)</button>
+                            <button onClick={() => setTimeMode('YTD')} className={`px-4 py-2 text-[10px] uppercase tracking-wider font-black rounded-lg transition-all ${timeMode === 'YTD' ? 'bg-white shadow-sm text-blue-700' : 'text-slate-500 hover:text-slate-700'}`}>YTD (Acumulado)</button>
+                        </div>
+
                         <div className="flex items-center gap-3">
                             {lastUpdate && <div className="text-xs font-bold text-slate-500 bg-white border border-slate-200 px-3 py-1.5 rounded-full flex items-center gap-2"><Icon name="Clock" size={14}/> Atualizado: <span className="text-slate-700">{lastUpdate}</span></div>}
+                            <button onClick={() => openModal('analitico')} className="flex items-center gap-2 bg-blue-50 text-blue-700 border border-blue-200 px-4 py-2 rounded-xl text-xs font-bold shadow-sm hover:bg-blue-100 transition-colors"><Icon name="List" size={14}/> Visão Analítica</button>
                             <button onClick={() => setShowUploadScreen(true)} className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-md hover:bg-black transition-colors"><Icon name="Upload" size={14}/> CSV Local</button>
                         </div>
                     </div>
@@ -1595,7 +1826,7 @@
                     <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
                         <div className="bg-white p-4 lg:p-5 rounded-[1.5rem] border border-slate-100 shadow-sm flex flex-col justify-between">
                             <div><p className="text-slate-400 text-[9px] font-black uppercase mb-1">Faturamento (Seleção)</p><h3 className="text-xl lg:text-2xl font-black text-slate-800">{formatCurrency(statsFiltered.fat)}</h3></div>
-                            <GrowthBadge growth={metrics.fatGrowth} curLabel={yearComparison?.curLabel} prevLabel={yearComparison?.prevLabel} />
+                            <GrowthBadge growth={metrics.fatGrowth} curLabel={yearComparison?.curLabel} prevLabel={yearComparison?.prevLabel} timeMode={timeMode} />
                         </div>
                         <div onClick={() => openModal('preco')} className="bg-white hover:bg-slate-50 transition-colors p-4 lg:p-5 rounded-[1.5rem] border border-slate-100 shadow-sm flex flex-col justify-between cursor-pointer group">
                             <div>
@@ -1604,8 +1835,8 @@
                                 <p className="text-slate-500 text-[9px] font-bold mt-1">Por unidade faturada</p>
                             </div>
                             <div className="flex flex-col gap-1 mt-auto">
-                                <GrowthBadge growth={metrics.precoMedioGrowth} curLabel={yearComparison?.curLabel} prevLabel={yearComparison?.prevLabel} />
-                                <div className="mt-1 flex items-center gap-1 text-[9px] font-bold w-fit px-2 py-0.5 rounded-full bg-slate-50 text-slate-500 group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors border border-slate-200">Clique para detalhar</div>
+                                <GrowthBadge growth={metrics.precoMedioGrowth} curLabel={yearComparison?.curLabel} prevLabel={yearComparison?.prevLabel} timeMode={timeMode} />
+                                <div className="mt-1 flex items-center gap-1 text-[9px] font-bold w-fit px-2 py-0.5 rounded-full bg-slate-50 text-slate-500 group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors border border-slate-200" title="Ver Analítico Detalhado de Preços">Ver Tabela de Preços</div>
                             </div>
                         </div>
                         <div onClick={() => openModal('capilaridade')} className="bg-white hover:bg-slate-50 transition-colors p-4 lg:p-5 rounded-[1.5rem] border border-slate-100 shadow-sm flex flex-col justify-between cursor-pointer group">
@@ -1615,38 +1846,38 @@
                                 <p className="text-slate-500 text-[9px] font-bold mt-1">PDVs na seleção</p>
                             </div>
                             <div className="flex flex-col gap-1 mt-auto">
-                                <GrowthBadge growth={metrics.capGrowth} curLabel={yearComparison?.curLabel} prevLabel={yearComparison?.prevLabel} />
+                                <GrowthBadge growth={metrics.capGrowth} curLabel={yearComparison?.curLabel} prevLabel={yearComparison?.prevLabel} timeMode={timeMode} />
                                 <div className="mt-1 flex items-center gap-1 text-[9px] font-bold w-fit px-2 py-0.5 rounded-full bg-slate-50 text-slate-500 group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors border border-slate-200">Clique para ver evolução</div>
                             </div>
                         </div>
                         <div onClick={() => openModal('novos')} className="bg-emerald-50 hover:bg-emerald-100 transition-colors p-4 lg:p-5 rounded-[1.5rem] border border-emerald-100 shadow-sm flex flex-col justify-between cursor-pointer group">
                             <div>
-                                <div className="flex justify-between items-start mb-1"><p className="text-emerald-600/70 text-[9px] font-black uppercase">Clientes Novos (Ciclo UDM)</p><Icon name="List" size={12} className="text-emerald-400 group-hover:text-emerald-600" /></div>
+                                <div className="flex justify-between items-start mb-1"><p className="text-emerald-600/70 text-[9px] font-black uppercase">Clientes Novos</p><Icon name="List" size={12} className="text-emerald-400 group-hover:text-emerald-600" /></div>
                                 <h3 className="text-xl lg:text-2xl font-black text-emerald-700">{Number(metrics.novosMain || 0).toLocaleString('pt-BR')}</h3>
                                 <p className="text-emerald-600 text-[9px] font-bold mt-1">{formatCurrency(metrics.fatNovosMain)} receita</p>
                             </div>
                             <div className="flex flex-col gap-1 mt-auto">
-                                <div className="mt-1 flex items-center gap-1 text-[9px] font-bold w-fit px-2 py-0.5 rounded-full bg-emerald-200/50 text-emerald-700 group-hover:bg-emerald-600 group-hover:text-white transition-colors">Clique para detalhar</div>
+                                <div className="mt-1 flex items-center gap-1 text-[9px] font-bold w-fit px-2 py-0.5 rounded-full bg-emerald-200/50 text-emerald-700 group-hover:bg-emerald-600 group-hover:text-white transition-colors">Detalhar Ciclo {timeMode}</div>
                             </div>
                         </div>
                         <div onClick={() => openModal('alerta')} className="bg-amber-50 hover:bg-amber-100 transition-colors p-4 lg:p-5 rounded-[1.5rem] border border-amber-100 shadow-sm flex flex-col justify-between cursor-pointer group">
                             <div>
-                                <div className="flex justify-between items-start mb-1"><p className="text-amber-600/70 text-[9px] font-black uppercase">Em Alerta (Ciclo UDM)</p><Icon name="Bell" size={12} className="text-amber-400 group-hover:text-amber-600" /></div>
+                                <div className="flex justify-between items-start mb-1"><p className="text-amber-600/70 text-[9px] font-black uppercase">Em Alerta</p><Icon name="Bell" size={12} className="text-amber-400 group-hover:text-amber-600" /></div>
                                 <h3 className="text-xl lg:text-2xl font-black text-amber-700">{Number(metrics.alertaMain || 0).toLocaleString('pt-BR')}</h3>
                                 <p className="text-amber-600 text-[9px] font-bold mt-1">Estoque Virtual Vencido</p>
                             </div>
                             <div className="flex flex-col gap-1 mt-auto">
-                                <div className="mt-1 flex items-center gap-1 text-[9px] font-bold w-fit px-2 py-0.5 rounded-full bg-amber-200/50 text-amber-800 group-hover:bg-amber-600 group-hover:text-white transition-colors">Clique para detalhar</div>
+                                <div className="mt-1 flex items-center gap-1 text-[9px] font-bold w-fit px-2 py-0.5 rounded-full bg-amber-200/50 text-amber-800 group-hover:bg-amber-600 group-hover:text-white transition-colors">Detalhar Ciclo {timeMode}</div>
                             </div>
                         </div>
                         <div onClick={() => openModal('perdidos')} className="bg-rose-50 hover:bg-rose-100 transition-colors p-4 lg:p-5 rounded-[1.5rem] border border-rose-100 shadow-sm flex flex-col justify-between cursor-pointer group">
                             <div>
-                                <div className="flex justify-between items-start mb-1"><p className="text-rose-600/70 text-[9px] font-black uppercase">Clientes Perdidos (Ciclo UDM)</p><Icon name="List" size={12} className="text-rose-400 group-hover:text-rose-600" /></div>
+                                <div className="flex justify-between items-start mb-1"><p className="text-rose-600/70 text-[9px] font-black uppercase">Clientes Perdidos</p><Icon name="List" size={12} className="text-rose-400 group-hover:text-rose-600" /></div>
                                 <h3 className="text-xl lg:text-2xl font-black text-rose-700">{Number(metrics.perdidosMain || 0).toLocaleString('pt-BR')}</h3>
                                 <p className="text-rose-600 text-[9px] font-bold mt-1">{formatCurrency(metrics.fatPerdidosMain)} churn</p>
                             </div>
                             <div className="flex flex-col gap-1 mt-auto">
-                                <div className="mt-1 flex items-center gap-1 text-[9px] font-bold w-fit px-2 py-0.5 rounded-full bg-rose-200/50 text-rose-700 group-hover:bg-rose-600 group-hover:text-white transition-colors">Clique para detalhar</div>
+                                <div className="mt-1 flex items-center gap-1 text-[9px] font-bold w-fit px-2 py-0.5 rounded-full bg-rose-200/50 text-rose-700 group-hover:bg-rose-600 group-hover:text-white transition-colors">Detalhar Ciclo {timeMode}</div>
                             </div>
                         </div>
                     </div>
@@ -1677,7 +1908,7 @@
                         </div>
 
                         <div className="bg-white p-6 rounded-[1.5rem] border border-slate-100 shadow-sm">
-                             <h3 className="text-sm font-black uppercase tracking-widest text-slate-800 flex items-center gap-2 mb-4"><Icon name="MapPin" className="text-blue-600" size={16}/> Representatividade UF (UDM Atual)</h3>
+                             <h3 className="text-sm font-black uppercase tracking-widest text-slate-800 flex items-center gap-2 mb-4"><Icon name="MapPin" className="text-blue-600" size={16}/> Representatividade UF ({timeMode})</h3>
                              <div className="h-[300px] w-full">
                                 <ResponsiveContainer width="100%" height="100%">
                                     <PieChart>
@@ -1697,7 +1928,7 @@
                         {/* Top Produtos */}
                         <div className="bg-white p-6 rounded-[1.5rem] border border-slate-100 shadow-sm overflow-hidden flex flex-col group">
                              <div className="flex justify-between items-center mb-4">
-                                <h3 className="text-sm font-black uppercase tracking-widest text-slate-800 flex items-center gap-2"><Icon name="Package" className="text-blue-600" size={16}/> Top Produtos (UDM)</h3>
+                                <h3 className="text-sm font-black uppercase tracking-widest text-slate-800 flex items-center gap-2"><Icon name="Package" className="text-blue-600" size={16}/> Top Produtos ({timeMode})</h3>
                                 <button onClick={() => openModal('produtos')} className="text-[9px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-lg hover:bg-blue-100 transition-colors flex items-center gap-1"><Icon name="List" size={12}/> Raio-X</button>
                              </div>
                              <div className="h-[300px] w-full mt-2">
@@ -1707,8 +1938,8 @@
                                         <YAxis dataKey="name" type="category" width={140} axisLine={false} tickLine={false} tickFormatter={formatYAxisTick} tick={{fontSize: 9, fontWeight: 700, fill: '#64748b'}} />
                                         <Tooltip content={(props) => <CustomYoyTooltip {...props} isProduct={true} yearComparison={yearComparison} />} cursor={{fill: '#f8fafc'}} />
                                         <Legend verticalAlign="top" height={24} iconType="circle" wrapperStyle={{ fontSize: '10px', fontWeight: 'bold', color: '#64748b' }} />
-                                        <Bar dataKey="qtyCur" name="Atual (12m)" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={10} label={renderProductBarLabel} />
-                                        <Bar dataKey="qtyComp" name="Anterior (12m)" fill="#cbd5e1" radius={[0, 4, 4, 0]} barSize={10} />
+                                        <Bar dataKey="qtyCur" name="Atual" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={10} label={renderProductBarLabel} />
+                                        <Bar dataKey="qtyComp" name="Anterior" fill="#cbd5e1" radius={[0, 4, 4, 0]} barSize={10} />
                                     </BarChart>
                                 </ResponsiveContainer>
                              </div>
@@ -1717,7 +1948,7 @@
                         {/* Top Distribuidores */}
                         <div className="bg-white p-6 rounded-[1.5rem] border border-slate-100 shadow-sm overflow-hidden flex flex-col group">
                              <div className="flex justify-between items-center mb-4">
-                                <h3 className="text-sm font-black uppercase tracking-widest text-slate-800 flex items-center gap-2"><Icon name="Truck" className="text-emerald-500" size={16}/> Top Distribuidores (UDM)</h3>
+                                <h3 className="text-sm font-black uppercase tracking-widest text-slate-800 flex items-center gap-2"><Icon name="Truck" className="text-emerald-500" size={16}/> Top Distribuidores ({timeMode})</h3>
                                 <button onClick={() => openModal('distribuidores')} className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg hover:bg-emerald-100 transition-colors flex items-center gap-1"><Icon name="TrendingUp" size={12}/> Raio-X</button>
                              </div>
                              <div className="h-[300px] w-full mt-2">
@@ -1727,8 +1958,8 @@
                                         <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tickFormatter={formatYAxisTick} tick={{fontSize: 9, fontWeight: 700, fill: '#64748b'}} width={110} />
                                         <Tooltip content={(props) => <CustomYoyTooltip {...props} yearComparison={yearComparison} />} cursor={{fill: '#f8fafc'}} />
                                         <Legend verticalAlign="top" height={24} iconType="circle" wrapperStyle={{ fontSize: '10px', fontWeight: 'bold', color: '#64748b' }} />
-                                        <Bar dataKey="curVal" name="Atual (12m)" fill="#10b981" radius={[0, 4, 4, 0]} barSize={10} label={renderDistributorBarLabel} />
-                                        <Bar dataKey="compVal" name="Anterior (12m)" fill="#cbd5e1" radius={[0, 4, 4, 0]} barSize={10} />
+                                        <Bar dataKey="curVal" name="Atual" fill="#10b981" radius={[0, 4, 4, 0]} barSize={10} label={renderDistributorBarLabel} />
+                                        <Bar dataKey="compVal" name="Anterior" fill="#cbd5e1" radius={[0, 4, 4, 0]} barSize={10} />
                                     </BarChart>
                                 </ResponsiveContainer>
                              </div>
@@ -1737,7 +1968,7 @@
                         {/* Top Clientes */}
                         <div className="bg-white p-6 rounded-[1.5rem] border border-slate-100 shadow-sm overflow-hidden flex flex-col group">
                             <div className="flex justify-between items-center mb-4">
-                                <h3 className="text-sm font-black uppercase tracking-widest text-slate-800 flex items-center gap-2"><Icon name="Users" className="text-fuchsia-500" size={16}/> Top Clientes (UDM)</h3>
+                                <h3 className="text-sm font-black uppercase tracking-widest text-slate-800 flex items-center gap-2"><Icon name="Users" className="text-fuchsia-500" size={16}/> Top Clientes ({timeMode})</h3>
                                 <button onClick={() => openModal('top')} className="text-[9px] font-bold text-fuchsia-600 bg-fuchsia-50 px-2 py-1 rounded-lg hover:bg-fuchsia-100 transition-colors flex items-center gap-1"><Icon name="List" size={12}/> Raio-X</button>
                             </div>
                             <div className="h-[300px] w-full mt-2">
@@ -1747,8 +1978,8 @@
                                         <YAxis dataKey="name" type="category" width={150} axisLine={false} tickLine={false} tickFormatter={formatYAxisTick} tick={{fontSize: 9, fontWeight: 700, fill: '#64748b'}} />
                                         <Tooltip content={(props) => <CustomYoyTooltip {...props} yearComparison={yearComparison} />} cursor={{fill: '#f8fafc'}} />
                                         <Legend verticalAlign="top" height={30} iconType="circle" wrapperStyle={{ fontSize: '11px', fontWeight: 'bold', color: '#64748b' }} />
-                                        <Bar dataKey="curVal" name="Atual (12m)" fill="#f59e0b" radius={[0, 4, 4, 0]} barSize={10} label={renderClientBarLabel} />
-                                        <Bar dataKey="compVal" name="Anterior (12m)" fill="#cbd5e1" radius={[0, 4, 4, 0]} barSize={10} />
+                                        <Bar dataKey="curVal" name="Atual" fill="#f59e0b" radius={[0, 4, 4, 0]} barSize={10} label={renderClientBarLabel} />
+                                        <Bar dataKey="compVal" name="Anterior" fill="#cbd5e1" radius={[0, 4, 4, 0]} barSize={10} />
                                     </BarChart>
                                 </ResponsiveContainer>
                             </div>
