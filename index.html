@@ -36,7 +36,7 @@
 
     <script type="text/babel">
         const { useState, useMemo, useEffect, useRef } = React;
-        const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, PieChart, Pie, Legend, ReferenceLine } = window.Recharts;
+        const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, PieChart, Pie, Legend, ReferenceLine, ComposedChart } = window.Recharts;
 
         // --- SVGs Inline (Ícones) ---
         const SVG_ICONS = {
@@ -57,7 +57,8 @@
             Bell: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>`,
             Loader2: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`,
             Upload: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`,
-            Lock: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>`
+            Lock: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>`,
+            Target: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>`
         };
 
         const Icon = ({ name, size = 20, className = "" }) => {
@@ -149,22 +150,42 @@
                 let rawDate = obj['Date'] || obj['date'] || obj['Data'] || obj['data'] || obj['DATA'] || obj['DATE'] || '';
                 obj._rawDate = rawDate;
 
-                if (rawDate && (!obj._year || !obj._month)) {
-                    if (rawDate.match(/^\d{2}\/\d{2}\/\d{4}/)) {
-                        const parts = rawDate.split('/');
-                        obj._month = parseInt(parts[1], 10);
-                        obj._year = parseInt(parts[2], 10);
-                    } else if (rawDate.match(/^\d{4}-\d{2}-\d{2}/)) {
-                        obj._year = parseInt(rawDate.substring(0,4), 10);
-                        obj._month = parseInt(rawDate.substring(5,7), 10);
+                let timestamp = 0;
+                let displayDate = '';
+
+                if (rawDate) {
+                    let dtStr = String(rawDate).trim().split(' ')[0];
+                    let dt;
+                    if (dtStr.match(/^\d{2}\/\d{2}\/\d{4}/)) {
+                        const parts = dtStr.split('/');
+                        obj._month = obj._month || parseInt(parts[1], 10);
+                        obj._year = obj._year || parseInt(parts[2], 10);
+                        dt = new Date(`${parts[2].substring(0,4)}-${parts[1]}-${parts[0]}T12:00:00Z`);
+                        displayDate = `${parts[0]}/${parts[1]}/${parts[2].substring(0,4)}`;
+                    } else if (dtStr.match(/^\d{4}-\d{2}-\d{2}/)) {
+                        obj._year = obj._year || parseInt(dtStr.substring(0,4), 10);
+                        obj._month = obj._month || parseInt(dtStr.substring(5,7), 10);
+                        dt = new Date(`${dtStr.substring(0,4)}-${dtStr.substring(5,7)}-${dtStr.substring(8,10)}T12:00:00Z`);
+                        displayDate = `${dtStr.substring(8,10)}/${dtStr.substring(5,7)}/${dtStr.substring(0,4)}`;
                     } else {
-                        const d = new Date(rawDate);
-                        if (!isNaN(d)) {
-                            obj._year = d.getUTCFullYear();
-                            obj._month = d.getUTCMonth() + 1;
+                        dt = new Date(dtStr);
+                        if (!isNaN(dt)) {
+                            obj._year = obj._year || dt.getUTCFullYear();
+                            obj._month = obj._month || (dt.getUTCMonth() + 1);
+                            displayDate = `${String(dt.getUTCDate()).padStart(2, '0')}/${String(dt.getUTCMonth() + 1).padStart(2, '0')}/${dt.getUTCFullYear()}`;
                         }
                     }
+                    if (dt && !isNaN(dt)) timestamp = dt.getTime();
                 }
+                
+                if (!timestamp && obj._year && obj._month) {
+                    const dt = new Date(`${obj._year}-${String(obj._month).padStart(2, '0')}-01T12:00:00Z`);
+                    timestamp = dt.getTime();
+                    displayDate = `01/${String(obj._month).padStart(2, '0')}/${obj._year}`;
+                }
+
+                obj._timestamp = timestamp;
+                obj._displayDate = displayDate || 'N/I';
                 
                 obj._amount = Number(obj._amount) || 0;
                 obj._qty = Number(obj._qty) || 0;
@@ -227,7 +248,7 @@
             return <text x={(x||0) + (width||0) + 5} y={(y||0) + (height||0) / 2 + 1} fill="#f59e0b" textAnchor="start" dominantBaseline="central" fontSize="10" fontWeight="bold">{formatShortNumber(value)}</text>;
         };
 
-        // --- Input de Pesquisa Anti-Lag com Botão "X" ---
+        // --- Input de Pesquisa Anti-Lag ---
         const DebouncedInput = ({ value, onChange, placeholder, icon }) => {
             const [localVal, setLocalVal] = useState(value || '');
             const onChangeRef = useRef(onChange);
@@ -259,7 +280,7 @@
             );
         };
 
-        // --- Custom Single Select para Modais ---
+        // --- Custom Single Select ---
         const CustomSingleSelect = ({ label, options, selected, onChange, placeholder, searchable = false }) => {
             const [isOpen, setIsOpen] = useState(false);
             const [searchTerm, setSearchTerm] = useState('');
@@ -371,7 +392,7 @@
             );
         };
 
-        const GrowthBadge = ({ growth, curLabel, prevLabel, invertColors = false, timeMode = 'UDM' }) => {
+        const GrowthBadge = ({ growth, curLabel, prevLabel, invertColors = false, timeMode = 'YTD' }) => {
             if (growth === null || growth === undefined) {
                 return (
                     <div className="mt-3 flex items-center gap-1 text-[9px] font-bold text-slate-500 bg-slate-50 w-fit px-2 py-0.5 rounded-full">
@@ -393,7 +414,7 @@
             );
         };
 
-        // --- Tooltips dos Gráficos Inferiores ---
+        // --- Tooltips dos Gráficos ---
         const CustomYoyTooltip = ({ active, payload, label, isProduct = false, yearComparison }) => {
             if (active && payload && payload.length && yearComparison) {
                 const dataObj = payload[0].payload;
@@ -476,6 +497,28 @@
             return null;
         };
 
+        const CustomAbcTooltip = ({ active, payload }) => {
+            if (active && payload && payload.length) {
+                const data = payload[0].payload;
+                return (
+                    <div className="bg-white p-3 rounded-xl shadow-xl border border-slate-100 text-xs z-50">
+                        <p className="font-black text-slate-800 mb-2 max-w-[200px] truncate">{data.name}</p>
+                        <p className="font-bold text-slate-600 flex justify-between gap-4"><span>Rank:</span> <span className="text-slate-900">#{data.rank}</span></p>
+                        <p className="font-bold text-slate-600 flex justify-between gap-4"><span>Fat:</span> <span className="text-emerald-600">{formatCurrency(data.amount)}</span></p>
+                        <p className="font-bold text-slate-600 flex justify-between gap-4"><span>Repres:</span> <span className="text-slate-900">{data.pct.toFixed(2)}%</span></p>
+                        <p className="font-bold text-slate-600 flex justify-between gap-4"><span>Acumulado:</span> <span className="text-fuchsia-600">{data.accPct.toFixed(2)}%</span></p>
+                        <p className="font-bold text-slate-600 flex items-center justify-between gap-4 mt-1 pt-1 border-t border-slate-100">
+                            <span>Curva:</span> 
+                            <span className={`px-1.5 rounded-md text-[10px] font-black ${data.curve === 'A' ? 'bg-emerald-100 text-emerald-700' : data.curve === 'B' ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-600'}`}>
+                                {data.curve}
+                            </span>
+                        </p>
+                    </div>
+                );
+            }
+            return null;
+        };
+
         const App = () => {
             const [data, setData] = useState([]);
             const [isLoaded, setIsLoaded] = useState(false);
@@ -490,7 +533,8 @@
 
             const [evolucaoMode, setEvolucaoMode] = useState('faturamento');
             const [modalEvolucaoMode, setModalEvolucaoMode] = useState('faturamento');
-            const [timeMode, setTimeMode] = useState('UDM'); // 'UDM' ou 'YTD'
+            const [timeMode, setTimeMode] = useState('YTD'); // YTD por padrão
+            const [pieChartMetric, setPieChartMetric] = useState('UF');
             
             const [localModalSearch, setLocalModalSearch] = useState('');
 
@@ -498,10 +542,13 @@
             const [modalUfFilter, setModalUfFilter] = useState([]);
             const [modalYearFilter, setModalYearFilter] = useState('Todos');
             
-            // Filtros Nativos dos Raio-X
             const [modalDistributorFilter, setModalDistributorFilter] = useState(''); 
             const [modalProductFilter, setModalProductFilter] = useState(''); 
             const [modalClientFilter, setModalClientFilter] = useState(''); 
+            const [modalAbcFilter, setModalAbcFilter] = useState('TODOS');
+            const [analiticoSortOrder, setAnaliticoSortOrder] = useState('desc'); // 'desc' ou 'asc'
+            
+            const [abcDimension, setAbcDimension] = useState('clientes');
 
             const [filters, setFilters] = useState({ searchCustomer: '', searchProduct: '', years: [], months: [], state: [], customerType: [], type: [], product: [] });
 
@@ -577,6 +624,10 @@
                 } else {
                     setLastUpdate("Desconhecida");
                 }
+
+                // Filtro Padrão Automático: Todos os tipos WISP
+                const wispTypes = [...new Set(parsed.map(d => d._customerType))].filter(c => typeof c === 'string' && c.toUpperCase().includes('WISP'));
+                setFilters(f => ({ ...f, customerType: wispTypes }));
             };
 
             const options = useMemo(() => {
@@ -634,90 +685,123 @@
                 return { fat, qty, cap: cnpjs.size, precoMedio: qty > 0 ? fat / qty : 0 };
             }, [filteredData]);
 
-            // --- Lógica UDM vs YTD Estrutural ---
+            // --- Lógica UDM vs YTD ---
             const yearComparison = useMemo(() => {
-                if (!data.length || !activeYears.length) return null;
-                const refYear = Math.max(...activeYears);
+                if (!data.length) return null;
+
+                const refYears = filters.years.length > 0 
+                    ? filters.years.map(Number).sort((a,b)=>b-a) 
+                    : [...new Set(data.map(d=>d._year))].filter(y=>y>0).sort((a,b)=>b-a);
+                if (refYears.length === 0) return null;
+                const refYear = refYears[0];
+
+                const explicitMonths = filters.months.length > 0 ? filters.months.map(Number).sort((a,b)=>a-b) : [];
                 const yearData = data.filter(d => d._year === refYear && d._month > 0);
-                const refMonth = filters.months.length > 0 ? Math.max(...filters.months.map(Number)) : (yearData.length > 0 ? Math.max(...yearData.map(d => d._month)) : 12);
-                
-                let curStartAbs, curEndAbs, prevStartAbs, prevEndAbs;
+                const maxAvailMonth = yearData.length > 0 ? Math.max(...yearData.map(d => d._month)) : 12;
 
-                if (timeMode === 'UDM') {
-                    curEndAbs = refYear * 12 + refMonth;
-                    curStartAbs = curEndAbs - 11;
-                    prevEndAbs = curEndAbs - 12;
-                    prevStartAbs = prevEndAbs - 11;
-                } else { // YTD
-                    curStartAbs = refYear * 12 + 1; // Jan do ano de ref
-                    curEndAbs = refYear * 12 + refMonth;
-                    prevStartAbs = (refYear - 1) * 12 + 1; // Jan do ano ant
-                    prevEndAbs = (refYear - 1) * 12 + refMonth;
-                }
+                let curLabel = ''; let prevLabel = '';
+                let curData = []; let compData = [];
+                let curEndAbs = 0;
 
-                const formatPeriod = (startAbs, endAbs) => {
-                    const startM = ((startAbs - 1) % 12) + 1;
-                    const startY = Math.floor((startAbs - 1) / 12);
-                    const endM = ((endAbs - 1) % 12) + 1;
-                    const endY = Math.floor((endAbs - 1) / 12);
-                    return `${MONTH_NAMES[startM-1]}/${startY.toString().slice(-2)} a ${MONTH_NAMES[endM-1]}/${endY.toString().slice(-2)}`;
-                };
-
-                const getUdmData = (s, e) => data.filter(i => {
-                    const abs = i._year * 12 + i._month;
-                    if (abs < s || abs > e) return false;
-                    if (filters.state.length > 0 && !filters.state.includes(i._state)) return false;
-                    if (filters.type.length > 0 && !filters.type.includes(i._type)) return false;
-                    if (filters.customerType.length > 0 && !filters.customerType.includes(i._customerType)) return false;
-                    if (filters.product.length > 0 && !filters.product.includes(i._product)) return false;
-                    
+                const passesBase = (item) => {
+                    if (filters.state.length > 0 && !filters.state.includes(item._state)) return false;
+                    if (filters.type.length > 0 && !filters.type.includes(item._type)) return false;
+                    if (filters.customerType.length > 0 && !filters.customerType.includes(item._customerType)) return false;
+                    const prodName = item._product || '';
+                    if (filters.product.length > 0 && !filters.product.includes(prodName)) return false;
                     if (filters.searchCustomer) {
                         const term = removeAccents(String(filters.searchCustomer).toLowerCase().trim());
                         const termDigits = term.replace(/\D/g, '');
-                        const customerName = removeAccents(String(i._customer).toLowerCase());
-                        const cnpjStr = String(i.cnpj || '');
+                        const customerName = removeAccents(String(item._customer).toLowerCase());
+                        const cnpjStr = String(item.cnpj || '');
                         if (!(customerName.includes(term) || (termDigits && cnpjStr.includes(termDigits)))) return false;
                     }
                     if (filters.searchProduct) {
                         const term = removeAccents(String(filters.searchProduct).toLowerCase().trim());
-                        const pName = removeAccents(String(i._product).toLowerCase());
+                        const pName = removeAccents(String(item._product).toLowerCase());
                         if (!pName.includes(term)) return false;
                     }
-                    
                     return true;
-                });
-
-                return { 
-                    curLabel: formatPeriod(curStartAbs, curEndAbs), 
-                    prevLabel: formatPeriod(prevStartAbs, prevEndAbs), 
-                    dataCur: getUdmData(curStartAbs, curEndAbs), 
-                    dataComp: getUdmData(prevStartAbs, prevEndAbs), 
-                    curEndAbs 
                 };
-            }, [data, filters, activeYears, timeMode]);
+
+                if (timeMode === 'UDM') {
+                    let endMonth = explicitMonths.length > 0 ? explicitMonths[explicitMonths.length - 1] : maxAvailMonth;
+                    if (endMonth > maxAvailMonth) endMonth = maxAvailMonth; // Blindagem contra meses futuros (Falso-Churn)
+
+                    curEndAbs = refYear * 12 + endMonth;
+                    const curStartAbs = curEndAbs - 11;
+                    const prevEndAbs = curEndAbs - 12;
+                    const prevStartAbs = prevEndAbs - 11;
+
+                    const formatPeriod = (startAbs, endAbs) => {
+                        const startM = ((startAbs - 1) % 12) + 1;
+                        const startY = Math.floor((startAbs - 1) / 12);
+                        const endM = ((endAbs - 1) % 12) + 1;
+                        const endY = Math.floor((endAbs - 1) / 12);
+                        return `${MONTH_NAMES[startM-1]}/${startY.toString().slice(-2)} a ${MONTH_NAMES[endM-1]}/${endY.toString().slice(-2)}`;
+                    };
+                    curLabel = formatPeriod(curStartAbs, curEndAbs);
+                    prevLabel = formatPeriod(prevStartAbs, prevEndAbs);
+
+                    curData = data.filter(d => {
+                        if (!passesBase(d)) return false;
+                        const abs = d._year * 12 + d._month;
+                        return abs >= curStartAbs && abs <= curEndAbs;
+                    });
+                    compData = data.filter(d => {
+                        if (!passesBase(d)) return false;
+                        const abs = d._year * 12 + d._month;
+                        return abs >= prevStartAbs && abs <= prevEndAbs;
+                    });
+                    
+                } else { 
+                    const targetMonths = explicitMonths.length > 0 ? explicitMonths : Array.from({length: maxAvailMonth}, (_, i) => i + 1);
+                    const safeTargetMonthsComp = targetMonths.filter(m => m <= maxAvailMonth); // Blindagem: não compara base antiga com meses que ainda não aconteceram
+                    
+                    curEndAbs = refYear * 12 + Math.max(...(targetMonths.length ? targetMonths : [1]));
+                    
+                    const activeYearsStr = refYears.length > 2 ? `${refYears.length} anos` : refYears.map(y => y.toString().slice(-2)).join('/');
+                    const compYearsStr = refYears.length > 2 ? `Anterior` : refYears.map(y => (y - 1).toString().slice(-2)).join('/');
+
+                    if (targetMonths.length === 1) {
+                         curLabel = `${MONTH_NAMES[targetMonths[0]-1]} (${activeYearsStr})`;
+                         prevLabel = `${MONTH_NAMES[targetMonths[0]-1]} (${compYearsStr})`;
+                    } else if (explicitMonths.length > 0) {
+                         curLabel = `Meses Sel. (${activeYearsStr})`;
+                         prevLabel = `Meses Sel. (${compYearsStr})`;
+                    } else {
+                         curLabel = `Jan a ${MONTH_NAMES[maxAvailMonth-1]} (${activeYearsStr})`;
+                         prevLabel = `Jan a ${MONTH_NAMES[maxAvailMonth-1]} (${compYearsStr})`;
+                    }
+
+                    curData = data.filter(d => refYears.includes(d._year) && targetMonths.includes(d._month) && passesBase(d));
+                    const compYears = refYears.map(y => y - 1);
+                    compData = data.filter(d => compYears.includes(d._year) && safeTargetMonthsComp.includes(d._month) && passesBase(d));
+                }
+
+                return { curLabel, prevLabel, dataCur: curData, dataComp: compData, curEndAbs };
+            }, [data, filters, timeMode]);
 
             const metrics = useMemo(() => {
                 if (!yearComparison) return { fatCur: 0, fatComp: 0, capCur: 0, capComp: 0, novosMain: 0, perdidosMain: 0, alertaMain: 0, precoMedioCur: 0, precoMedioGrowth: null, alertaDetails: [], novosDetails: [], perdidosDetails: [], top20Details: [], allClientsRanked: [] };
                 
                 const { dataCur, dataComp, curEndAbs } = yearComparison;
-                
                 let fatCurTotal = 0; let fatCompTotal = 0;
                 let qtyCurTotal = 0; let qtyCompTotal = 0;
                 
                 const cliMap = new Map();
                 for (let i = 0; i < dataCur.length; i++) {
                     const d = dataCur[i];
-                    fatCurTotal += d._amount;
-                    qtyCurTotal += d._qty;
+                    fatCurTotal += d._amount; qtyCurTotal += d._qty;
                     const c = String(d.cnpj || '').replace(/\D/g, '');
                     if (c) {
                         if (!cliMap.has(c)) cliMap.set(c, { 
                             cnpj: c, name: d._customer, state: d._state, 
-                            fatCur: 0, fatComp: 0, maxDateAbs: 0,
+                            fatCur: 0, fatComp: 0, curVal: 0, compVal: 0, qtyCur: 0, qtyComp: 0, maxDateAbs: 0,
                             distributors: new Map(), products: new Map()
                         });
                         const entry = cliMap.get(c);
-                        entry.fatCur += d._amount;
+                        entry.fatCur += d._amount; entry.curVal += d._amount; entry.qtyCur += d._qty;
                         const dAbs = d._year * 12 + d._month;
                         if (dAbs > entry.maxDateAbs) entry.maxDateAbs = dAbs;
                         
@@ -730,58 +814,40 @@
                 
                 for (let i = 0; i < dataComp.length; i++) {
                     const d = dataComp[i];
-                    fatCompTotal += d._amount;
-                    qtyCompTotal += d._qty;
+                    fatCompTotal += d._amount; qtyCompTotal += d._qty;
                     const c = String(d.cnpj || '').replace(/\D/g, '');
                     if (c) {
                         if (!cliMap.has(c)) cliMap.set(c, { 
                             cnpj: c, name: d._customer, state: d._state, 
-                            fatCur: 0, fatComp: 0, maxDateAbs: 0,
+                            fatCur: 0, fatComp: 0, curVal: 0, compVal: 0, qtyCur: 0, qtyComp: 0, maxDateAbs: 0,
                             distributors: new Map(), products: new Map()
                         });
-                        cliMap.get(c).fatComp += d._amount;
+                        const entry = cliMap.get(c);
+                        entry.fatComp += d._amount; entry.compVal += d._amount; entry.qtyComp += d._qty;
                     }
                 }
                 
-                const novosDetails = [];
-                const perdidosDetails = [];
-                const alertaDetails = [];
-                const allClients = [];
-                
-                let capCur = 0; let capComp = 0;
-                let fatNovosMain = 0; let fatPerdidosMain = 0;
-                let alertaMain = 0; 
+                const novosDetails = []; const perdidosDetails = []; const alertaDetails = []; const allClients = [];
+                let capCur = 0; let capComp = 0; let fatNovosMain = 0; let fatPerdidosMain = 0; let alertaMain = 0; 
 
                 cliMap.forEach((val) => {
-                    const isCur = val.fatCur > 0;
-                    const isComp = val.fatComp > 0;
-                    
+                    const isCur = val.fatCur > 0; const isComp = val.fatComp > 0;
                     if (isCur) {
                         val.top3Dists = Array.from(val.distributors.entries()).sort((a,b)=>b[1]-a[1]).slice(0,3).map(e=>e[0]);
                         val.top3Prods = Array.from(val.products.entries()).sort((a,b)=>b[1]-a[1]).slice(0,3).map(e=>e[0]);
                     } else {
-                        val.top3Dists = [];
-                        val.top3Prods = [];
+                        val.top3Dists = []; val.top3Prods = [];
                     }
 
                     if (isCur) capCur++;
                     if (isComp) capComp++;
                     if (isCur) allClients.push(val);
                     
-                    if (isCur && !isComp) {
-                        fatNovosMain += val.fatCur;
-                        novosDetails.push(val);
-                    }
-                    if (!isCur && isComp) {
-                        fatPerdidosMain += val.fatComp;
-                        perdidosDetails.push(val);
-                    }
+                    if (isCur && !isComp) { fatNovosMain += val.fatCur; novosDetails.push(val); }
+                    if (!isCur && isComp) { fatPerdidosMain += val.fatComp; perdidosDetails.push(val); }
                     if (isCur) {
                         const delay = curEndAbs - val.maxDateAbs;
-                        if (delay > 2 && delay < 12) {
-                            alertaDetails.push({ ...val, atraso: delay, mediaMensal: val.fatCur / 12 });
-                            alertaMain++;
-                        }
+                        if (delay > 2 && delay < 12) { alertaDetails.push({ ...val, atraso: delay, mediaMensal: val.fatCur / 12 }); alertaMain++; }
                     }
                 });
                 
@@ -802,10 +868,8 @@
                     fatGrowth: fatCompTotal > 0 ? ((fatCurTotal - fatCompTotal)/fatCompTotal)*100 : null,
                     capGrowth: capComp > 0 ? ((capCur - capComp)/capComp)*100 : null,
                     novosMain: novosDetails.length, perdidosMain: perdidosDetails.length, alertaMain: alertaMain,
-                    fatNovosMain, fatPerdidosMain,
-                    precoMedioCur, precoMedioGrowth,
-                    novosDetails, perdidosDetails, top20Details, alertaDetails,
-                    allClientsRanked
+                    fatNovosMain, fatPerdidosMain, precoMedioCur, precoMedioGrowth,
+                    novosDetails, perdidosDetails, top20Details, alertaDetails, allClientsRanked
                 };
             }, [yearComparison]);
 
@@ -838,7 +902,7 @@
 
             // --- Lógica Modais de Listagem Secundária (Raw Data/Analítico) ---
             const baseModalDataFiltered = useMemo(() => {
-                return (filteredData || []).filter(item => {
+                const filtered = (filteredData || []).filter(item => {
                     if (modalYearFilter !== 'Todos' && String(item._year) !== String(modalYearFilter)) return false;
                     if (modalUfFilter.length > 0 && !modalUfFilter.includes(item._state)) return false;
                     if (localModalSearch) {
@@ -850,9 +914,16 @@
                     }
                     return true;
                 });
-            }, [filteredData, modalYearFilter, modalUfFilter, localModalSearch]);
 
-            // PREPARAÇÃO SEGURA DOS PRODUTOS
+                return filtered.sort((a, b) => {
+                    if (analiticoSortOrder === 'desc') {
+                        return (b._timestamp || 0) - (a._timestamp || 0);
+                    } else {
+                        return (a._timestamp || 0) - (b._timestamp || 0);
+                    }
+                });
+            }, [filteredData, modalYearFilter, modalUfFilter, localModalSearch, analiticoSortOrder]);
+
             const produtosModalData = useMemo(() => {
                 if (!data.length || !['produtos', 'preco'].includes(modalConfig.type)) return [];
                 const pMap = new Map();
@@ -892,7 +963,6 @@
                 return produtosModalData.slice(0, 10);
             }, [produtosModalData, data.length, modalConfig.type]);
 
-            // PREPARAÇÃO SEGURA E ORDENAÇÃO EXATA (Listas Completas Classificadas para o YTD/UDM)
             const fullRankedProducts = useMemo(() => {
                 if (!yearComparison) return [];
                 const m = new Map();
@@ -957,33 +1027,132 @@
                 }).filter(d => d.curVal > 0).sort((a,b) => b.curVal - a.curVal);
             }, [yearComparison]);
 
-            // Opções formatadas para os Selects Dinâmicos (Raio-X)
+            const pieChartData = useMemo(() => {
+                if (!yearComparison) return [];
+                const m = new Map();
+                
+                let keyProp = '_state';
+                if (pieChartMetric === 'Tipo Cliente') keyProp = '_customerType';
+                else if (pieChartMetric === 'Unidade') keyProp = '_type';
+                else if (pieChartMetric === 'Distribuidor') keyProp = '_distributor';
+
+                yearComparison.dataCur.forEach(d => {
+                    let s = d[keyProp];
+                    if (!s || s === 'N/I' || s === 'Não Informado') s = 'Outros';
+                    if (!m.has(s)) m.set(s, { curVal: 0, compVal: 0 });
+                    m.get(s).curVal += d._amount;
+                });
+                yearComparison.dataComp.forEach(d => {
+                    let s = d[keyProp];
+                    if (!s || s === 'N/I' || s === 'Não Informado') s = 'Outros';
+                    if (!m.has(s)) m.set(s, { curVal: 0, compVal: 0 });
+                    m.get(s).compVal += d._amount;
+                });
+                
+                return Array.from(m.entries()).map(([name, vals]) => {
+                    const growth = vals.compVal > 0 ? ((vals.curVal - vals.compVal) / vals.compVal) * 100 : null;
+                    return { name, value: vals.curVal, curVal: vals.curVal, compVal: vals.compVal, growth };
+                }).filter(d => d.curVal > 0).sort((a,b) => b.curVal - a.curVal).slice(0, 10);
+            }, [yearComparison, pieChartMetric]);
+
             const availableModalDistributors = useMemo(() => {
-                return fullRankedDistributors.filter(d => d.name !== 'N/I' && d.name !== 'Não Informado').map(d => ({
-                    value: d.name,
-                    label: `#${d.rank} - ${d.name} (${formatCurrency(d.curVal)})`
-                }));
-            }, [fullRankedDistributors]);
+                const itemsSet = new Set();
+                filteredData.forEach(d => {
+                    if (modalUfFilter.length > 0 && !modalUfFilter.includes(d._state)) return;
+                    const dName = d._distributor;
+                    if (dName && dName !== 'N/I' && dName !== 'Não Informado') itemsSet.add(dName);
+                });
+
+                const rankedMap = new Map();
+                (fullRankedDistributors || []).forEach(d => rankedMap.set(d.name, d));
+
+                const options = [];
+                itemsSet.forEach(name => {
+                    const rankInfo = rankedMap.get(name);
+                    if (rankInfo && rankInfo.curVal > 0) {
+                        options.push({ value: name, label: `#${rankInfo.rank} - ${name} (${formatCurrency(rankInfo.curVal)})`, sortVal: rankInfo.curVal });
+                    } else {
+                        options.push({ value: name, label: `${name} (Sem vendas no período)`, sortVal: -1 });
+                    }
+                });
+
+                options.sort((a, b) => {
+                    if (a.sortVal > 0 && b.sortVal > 0) return b.sortVal - a.sortVal;
+                    if (a.sortVal > 0) return -1;
+                    if (b.sortVal > 0) return 1;
+                    return a.value.localeCompare(b.value);
+                });
+                options.unshift({ value: 'TODOS', label: '🌟 VISÃO GERAL (TODOS)' });
+                return options;
+            }, [filteredData, modalUfFilter, fullRankedDistributors]);
 
             const availableModalProducts = useMemo(() => {
-                return fullRankedProducts.filter(p => p.name !== 'N/I' && p.name !== 'Não Informado').map(p => ({
-                    value: p.name,
-                    label: `#${p.rank} - ${p.name} (${(p.qtyCur||0).toLocaleString('pt-BR')} un)`
-                }));
-            }, [fullRankedProducts]);
+                const itemsSet = new Set();
+                filteredData.forEach(d => {
+                    if (modalUfFilter.length > 0 && !modalUfFilter.includes(d._state)) return;
+                    const pName = d._product;
+                    if (pName && pName !== 'N/I' && pName !== 'Não Informado') itemsSet.add(pName);
+                });
+
+                const rankedMap = new Map();
+                (fullRankedProducts || []).forEach(p => rankedMap.set(p.name, p));
+
+                const options = [];
+                itemsSet.forEach(name => {
+                    const rankInfo = rankedMap.get(name);
+                    if (rankInfo && rankInfo.qtyCur > 0) {
+                        options.push({ value: name, label: `#${rankInfo.rank} - ${name} (${(rankInfo.qtyCur||0).toLocaleString('pt-BR')} un)`, sortVal: rankInfo.qtyCur });
+                    } else {
+                        options.push({ value: name, label: `${name} (Sem vendas no período)`, sortVal: -1 });
+                    }
+                });
+
+                options.sort((a, b) => {
+                    if (a.sortVal > 0 && b.sortVal > 0) return b.sortVal - a.sortVal;
+                    if (a.sortVal > 0) return -1;
+                    if (b.sortVal > 0) return 1;
+                    return a.value.localeCompare(b.value);
+                });
+                options.unshift({ value: 'TODOS', label: '🌟 VISÃO GERAL (TODOS)' });
+                return options;
+            }, [filteredData, modalUfFilter, fullRankedProducts]);
 
             const availableModalClients = useMemo(() => {
-                return (metrics.allClientsRanked || []).filter(c => c.name && c.name !== 'N/I' && c.name !== 'Não Informado').map(c => ({
-                    value: c.name,
-                    label: `#${c.rank} - ${c.name} (${formatCurrency(c.fatCur)})`
-                }));
-            }, [metrics.allClientsRanked]);
+                const itemsSet = new Set();
+                filteredData.forEach(d => {
+                    if (modalUfFilter.length > 0 && !modalUfFilter.includes(d._state)) return;
+                    const cName = d._customer;
+                    if (cName && cName !== 'N/I' && cName !== 'Não Informado') itemsSet.add(cName);
+                });
+
+                const rankedMap = new Map();
+                (metrics.allClientsRanked || []).forEach(c => rankedMap.set(c.name, c));
+
+                const options = [];
+                itemsSet.forEach(name => {
+                    const rankInfo = rankedMap.get(name);
+                    if (rankInfo && rankInfo.fatCur > 0) {
+                        options.push({ value: name, label: `#${rankInfo.rank} - ${name} (${formatCurrency(rankInfo.fatCur)})`, sortVal: rankInfo.fatCur });
+                    } else {
+                        options.push({ value: name, label: `${name} (Sem vendas no período)`, sortVal: -1 });
+                    }
+                });
+
+                options.sort((a, b) => {
+                    if (a.sortVal > 0 && b.sortVal > 0) return b.sortVal - a.sortVal;
+                    if (a.sortVal > 0) return -1;
+                    if (b.sortVal > 0) return 1;
+                    return a.value.localeCompare(b.value);
+                });
+                options.unshift({ value: 'TODOS', label: '🌟 VISÃO GERAL (TODOS)' });
+                return options;
+            }, [filteredData, modalUfFilter, metrics.allClientsRanked]);
 
             // RAIO-X DO DISTRIBUIDOR
             const distribuidorDetails = useMemo(() => {
                 if (modalConfig.type !== 'distribuidores' || !yearComparison || !modalDistributorFilter) return null;
                 const dist = modalDistributorFilter;
-                const filterDist = d => d._distributor === dist && (modalUfFilter.length === 0 || modalUfFilter.includes(d._state));
+                const filterDist = d => (dist === 'TODOS' || d._distributor === dist) && (modalUfFilter.length === 0 || modalUfFilter.includes(d._state));
                 
                 const cur = yearComparison.dataCur.filter(filterDist);
                 const prev = yearComparison.dataComp.filter(filterDist);
@@ -1029,15 +1198,15 @@
                     topClientsFat: Array.from(cMap.entries()).map(([name, obj]) => ({name, valor: obj.valor, qty: obj.qty, state: obj.state})).sort((a,b)=>b.valor - a.valor).slice(0, 10),
                     topClientsQty: Array.from(cMap.entries()).map(([name, obj]) => ({name, valor: obj.valor, qty: obj.qty, state: obj.state})).sort((a,b)=>b.qty - a.qty).slice(0, 10),
                     monthlyTrend: Array.from(monthMap.values()).sort((a,b)=>a.sort - b.sort),
-                    rank: fullRankedDistributors.find(d => d.name === dist)?.rank
+                    rank: dist === 'TODOS' ? null : fullRankedDistributors.find(d => d.name === dist)?.rank
                 };
             }, [yearComparison, modalConfig.type, modalDistributorFilter, modalUfFilter, fullRankedDistributors]);
 
-            // RAIO-X DO PRODUTO 
+            // RAIO-X DO PRODUTO
             const produtoDetails = useMemo(() => {
                 if (modalConfig.type !== 'produtos' || !yearComparison || !modalProductFilter) return null;
                 const prod = modalProductFilter;
-                const filterProd = d => d._product === prod && (modalUfFilter.length === 0 || modalUfFilter.includes(d._state));
+                const filterProd = d => (prod === 'TODOS' || d._product === prod) && (modalUfFilter.length === 0 || modalUfFilter.includes(d._state));
                 
                 const cur = yearComparison.dataCur.filter(filterProd);
                 const prev = yearComparison.dataComp.filter(filterProd);
@@ -1083,7 +1252,7 @@
                     topClientsFat: Array.from(cMap.entries()).map(([name, obj]) => ({name, valor: obj.valor, qty: obj.qty, state: obj.state})).sort((a,b)=>b.valor - a.valor).slice(0, 10),
                     topClientsQty: Array.from(cMap.entries()).map(([name, obj]) => ({name, valor: obj.valor, qty: obj.qty, state: obj.state})).sort((a,b)=>b.qty - a.qty).slice(0, 10),
                     monthlyTrend: Array.from(monthMap.values()).sort((a,b)=>a.sort - b.sort),
-                    rank: fullRankedProducts.find(p => p.name === prod)?.rank
+                    rank: prod === 'TODOS' ? null : fullRankedProducts.find(p => p.name === prod)?.rank
                 };
             }, [yearComparison, modalConfig.type, modalProductFilter, modalUfFilter, fullRankedProducts]);
 
@@ -1091,7 +1260,7 @@
             const clienteDetails = useMemo(() => {
                 if (modalConfig.type !== 'top' || !yearComparison || !modalClientFilter) return null;
                 const cli = modalClientFilter;
-                const filterCli = d => d._customer === cli && (modalUfFilter.length === 0 || modalUfFilter.includes(d._state));
+                const filterCli = d => (cli === 'TODOS' || d._customer === cli) && (modalUfFilter.length === 0 || modalUfFilter.includes(d._state));
                 
                 const cur = yearComparison.dataCur.filter(filterCli);
                 const prev = yearComparison.dataComp.filter(filterCli);
@@ -1133,9 +1302,9 @@
                     topProductsFat: Array.from(pMap.entries()).map(([name, obj]) => ({name, valor: obj.valor, qty: obj.qty})).sort((a,b)=>b.valor - a.valor).slice(0, 5),
                     topProductsQty: Array.from(pMap.entries()).map(([name, obj]) => ({name, valor: obj.valor, qty: obj.qty})).sort((a,b)=>b.qty - a.qty).slice(0, 5),
                     topDistributorsFat: Array.from(dMap.entries()).map(([name, obj]) => ({name, valor: obj.valor, qty: obj.qty})).sort((a,b)=>b.valor - a.valor).slice(0, 10),
-                    topDistributorsQty: Array.from(dMap.entries()).map(([name, obj]) => ({name, valor: obj.valor, qty: obj.qty})).sort((a,b)=>b.qty - a.qty).slice(0, 10),
+                    topDistribuidoresQty: Array.from(dMap.entries()).map(([name, obj]) => ({name, valor: obj.valor, qty: obj.qty})).sort((a,b)=>b.qty - a.qty).slice(0, 10),
                     monthlyTrend: Array.from(monthMap.values()).sort((a,b)=>a.sort - b.sort),
-                    rank: metrics.allClientsRanked?.find(c => c.name === cli)?.rank
+                    rank: cli === 'TODOS' ? null : metrics.allClientsRanked?.find(c => c.name === cli)?.rank
                 };
             }, [yearComparison, modalConfig.type, modalClientFilter, modalUfFilter, metrics.allClientsRanked]);
 
@@ -1162,7 +1331,7 @@
             }, [activeModalDataList, modalUfFilter, localModalSearch]);
 
             const availableModalUfs = useMemo(() => {
-                if (['capilaridade', 'distribuidores', 'produtos', 'top', 'preco', 'analitico'].includes(modalConfig.type)) {
+                if (['capilaridade', 'distribuidores', 'produtos', 'top', 'preco', 'analitico', 'abc'].includes(modalConfig.type)) {
                     return [...new Set((filteredData || []).map(d => d._state))].filter(Boolean).sort();
                 } else {
                     return [...new Set((activeModalDataList || []).map(d => d.state))].filter(Boolean).sort();
@@ -1216,6 +1385,77 @@
                 });
             }, [baseModalDataFiltered, data.length, modalConfig.type, modalYearFilter, ufsToPlotCapilaridade]);
 
+            const totalAnaliticoQtd = useMemo(() => baseModalDataFiltered.reduce((acc, d) => acc + (Number(d._qty) || 0), 0), [baseModalDataFiltered]);
+            const totalAnaliticoFat = useMemo(() => baseModalDataFiltered.reduce((acc, d) => acc + (Number(d._amount) || 0), 0), [baseModalDataFiltered]);
+            const precoMedioAnalitico = totalAnaliticoQtd > 0 ? totalAnaliticoFat / totalAnaliticoQtd : 0;
+
+            const totalModalFatCurLocal = useMemo(() => filteredModalDataList.reduce((acc, c) => acc + (Number(c.fatCur) || 0), 0), [filteredModalDataList]);
+            const totalModalFatCompLocal = useMemo(() => filteredModalDataList.reduce((acc, c) => acc + (Number(c.fatComp) || 0), 0), [filteredModalDataList]);
+
+            // --- Lógica: Curva ABC / Pareto ---
+            const abcData = useMemo(() => {
+                if (modalConfig.type !== 'abc' || !yearComparison) return null;
+                const dimension = abcDimension; 
+                const map = new Map();
+                let totalFat = 0;
+
+                yearComparison.dataCur.forEach(d => {
+                    const key = dimension === 'clientes' ? d._customer : d._product;
+                    const validKey = key && key !== 'N/I' && key !== 'Não Informado' ? key : 'Outros';
+                    
+                    if (!map.has(validKey)) map.set(validKey, { amount: 0, cnpj: d.cnpj || '' });
+                    const entry = map.get(validKey);
+                    entry.amount += d._amount;
+                    if (!entry.cnpj && d.cnpj) entry.cnpj = d.cnpj;
+                    totalFat += d._amount;
+                });
+
+                const sorted = Array.from(map.entries())
+                    .map(([name, vals]) => ({ name, amount: vals.amount, cnpj: vals.cnpj }))
+                    .sort((a, b) => b.amount - a.amount);
+
+                let acc = 0;
+                let countA = 0, countB = 0, countC = 0;
+                let fatA = 0, fatB = 0, fatC = 0;
+
+                const resultList = sorted.map((item, index) => {
+                    acc += item.amount;
+                    const pct = totalFat > 0 ? (item.amount / totalFat) * 100 : 0;
+                    const accPct = totalFat > 0 ? (acc / totalFat) * 100 : 0;
+                    
+                    let curve = 'C';
+                    if (accPct <= 80 || (countA === 0 && index === 0)) { 
+                        curve = 'A'; countA++; fatA += item.amount; 
+                    } else if (accPct <= 95) { 
+                        curve = 'B'; countB++; fatB += item.amount; 
+                    } else { 
+                        curve = 'C'; countC++; fatC += item.amount; 
+                    }
+
+                    return { ...item, rank: index + 1, pct, accPct, curve };
+                });
+
+                return { list: resultList, totalFat, countA, countB, countC, fatA, fatB, fatC };
+            }, [yearComparison, modalConfig.type, abcDimension]);
+
+            const abcOptions = useMemo(() => {
+                if (!abcData) return [];
+                const opts = abcData.list.map(item => ({
+                    value: item.name,
+                    label: `#${item.rank} - ${item.name} ${item.cnpj ? `(${item.cnpj})` : ''} - ${formatCurrency(item.amount)}`
+                }));
+                opts.unshift({ value: 'TODOS', label: '🌟 VISÃO GERAL (TODOS)' });
+                return opts;
+            }, [abcData]);
+
+            const filteredAbcListForTable = useMemo(() => {
+                if (!abcData) return [];
+                if (modalAbcFilter && modalAbcFilter !== 'TODOS') {
+                    return abcData.list.filter(item => item.name === modalAbcFilter);
+                }
+                return abcData.list;
+            }, [abcData, modalAbcFilter]);
+
             const openModal = (type) => { 
                 setModalConfig({ isOpen: true, type }); 
                 setModalUfFilter([]); 
@@ -1223,13 +1463,11 @@
                 setLocalModalSearch(''); 
                 setModalEvolucaoMode('faturamento');
                 
-                if (type === 'distribuidores') {
-                    setModalDistributorFilter(availableModalDistributors.length > 0 ? availableModalDistributors[0].value : '');
-                } else if (type === 'produtos') {
-                    setModalProductFilter(availableModalProducts.length > 0 ? availableModalProducts[0].value : '');
-                } else if (type === 'top') {
-                    setModalClientFilter(availableModalClients.length > 0 ? availableModalClients[0].value : '');
-                }
+                if (type === 'distribuidores') setModalDistributorFilter('TODOS');
+                else if (type === 'produtos') setModalProductFilter('TODOS');
+                else if (type === 'top') setModalClientFilter('TODOS');
+                else if (type === 'abc') setModalAbcFilter('TODOS');
+                else if (type === 'analitico') setAnaliticoSortOrder('desc');
             };
 
             const verifyPassword = () => {
@@ -1268,11 +1506,13 @@
             else if (modalConfig.type === 'produtos') { modalTitle = `Raio-X do Produto`; modalDesc = `Desempenho de Vendas e Principais Compradores`; iconColor = 'text-indigo-600 bg-indigo-100'; iconName = 'Package'; }
             else if (modalConfig.type === 'distribuidores') { modalTitle = `Raio-X do Distribuidor`; modalDesc = `Tração, Capilaridade e Mix de Produtos`; iconColor = 'text-emerald-600 bg-emerald-100'; iconName = 'Truck'; }
             else if (modalConfig.type === 'analitico') { modalTitle = `Visão Analítica (Raw Data)`; modalDesc = `Detalhamento linha a linha da sua seleção atual (Limitado a 500 registos para manter a performance)`; iconColor = 'text-slate-600 bg-slate-100'; iconName = 'List'; }
+            else if (modalConfig.type === 'abc') { modalTitle = `Análise de Concentração (Curva ABC)`; modalDesc = `Princípio de Pareto (80/15/5) para Gestão de Risco`; iconColor = 'text-indigo-600 bg-indigo-100'; iconName = 'Target'; }
 
             if (isLoadingAuto) {
                 return (
                     <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
-                        <Icon name="Loader2" size={48} className="text-blue-600 animate-spin mb-4" />
+                        <img src="mascote youyou.webp" alt="Youyou TP-Link" className="w-24 h-24 object-contain mx-auto mb-4 animate-pulse" onError={(e) => e.target.style.display = 'none'} />
+                        <Icon name="Loader2" size={32} className="text-blue-600 animate-spin mb-4" />
                         <h2 className="text-lg font-bold text-slate-700">Processando matriz de dados...</h2>
                     </div>
                 );
@@ -1290,7 +1530,7 @@
                             )}
                             {!isAdminVerified ? (
                                 <>
-                                    <Icon name="Lock" size={48} className="text-slate-300 mx-auto mb-6" />
+                                    <img src="mascote youyou.webp" alt="Youyou TP-Link" className="w-28 h-28 object-contain mx-auto mb-4 drop-shadow-md rounded-full bg-slate-50 p-2" onError={(e) => { e.target.onerror = null; e.target.outerHTML = '<div class="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-6"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-slate-400"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg></div>'; }} />
                                     <h2 className="text-2xl font-black text-slate-800 mb-2">Acesso Administrativo</h2>
                                     <p className="text-slate-500 text-sm mb-8">Introduza a senha para atualizar localmente a base de dados.</p>
                                     <input type="password" placeholder="Senha..." value={passwordValue} onChange={e => setPasswordValue(e.target.value)} onKeyDown={e => e.key === 'Enter' && verifyPassword()} autoFocus className={`w-full px-4 py-3 rounded-xl border text-center font-bold outline-none focus:ring-2 focus:ring-blue-500 mb-3 ${passwordError ? 'border-rose-500' : 'border-slate-200'}`} />
@@ -1299,7 +1539,7 @@
                                 </>
                             ) : (
                                 <>
-                                    <Icon name="Upload" size={48} className="text-blue-600 mx-auto mb-6" />
+                                    <img src="mascote youyou.webp" alt="Youyou TP-Link" className="w-28 h-28 object-contain mx-auto mb-4 drop-shadow-md rounded-full bg-blue-50 p-2" onError={(e) => { e.target.onerror = null; e.target.outerHTML = '<div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>'; }} />
                                     <h2 className="text-2xl font-black text-slate-800 mb-4">Carregar CSV Local</h2>
                                     <p className="text-slate-500 text-sm mb-8">Faça o upload do seu ficheiro CSV (.csv) para atualizar a vista deste painel.</p>
                                     <label className="block w-full cursor-pointer bg-slate-900 text-white font-bold py-4 rounded-2xl mb-4 text-center hover:bg-black transition-colors">
@@ -1313,9 +1553,6 @@
                     </div>
                 );
             }
-
-            const totalModalFatCurLocal = filteredModalDataList.reduce((acc, c) => acc + (Number(c.fatCur) || 0), 0);
-            const totalModalFatCompLocal = filteredModalDataList.reduce((acc, c) => acc + (Number(c.fatComp) || 0), 0);
 
             return (
                 <div className="max-w-[1600px] mx-auto p-4 md:p-6 text-slate-900">
@@ -1331,22 +1568,38 @@
                                         <div><h2 className="text-lg font-black">{modalTitle}</h2><p className="text-xs font-bold text-slate-400">{modalDesc}</p></div>
                                     </div>
                                     <div className="flex items-end gap-3">
-                                        {['distribuidores', 'produtos', 'top'].includes(modalConfig.type) ? (
+                                        {['distribuidores', 'produtos', 'top', 'abc'].includes(modalConfig.type) ? (
                                             <div className="flex flex-col gap-1 min-w-[240px] relative">
                                                 <CustomSingleSelect 
-                                                    label={modalConfig.type === 'distribuidores' ? 'Distribuidor Selecionado' : modalConfig.type === 'produtos' ? 'Produto Selecionado' : 'Cliente Selecionado'} 
-                                                    options={modalConfig.type === 'distribuidores' ? availableModalDistributors : modalConfig.type === 'produtos' ? availableModalProducts : availableModalClients} 
-                                                    selected={modalConfig.type === 'distribuidores' ? modalDistributorFilter : modalConfig.type === 'produtos' ? modalProductFilter : modalClientFilter} 
+                                                    label={
+                                                        modalConfig.type === 'distribuidores' ? 'Distribuidor Selecionado' : 
+                                                        modalConfig.type === 'produtos' ? 'Produto Selecionado' : 
+                                                        modalConfig.type === 'abc' ? (abcDimension === 'clientes' ? 'Buscar Cliente' : 'Buscar Produto') : 
+                                                        'Cliente Selecionado'
+                                                    } 
+                                                    options={
+                                                        modalConfig.type === 'distribuidores' ? availableModalDistributors : 
+                                                        modalConfig.type === 'produtos' ? availableModalProducts : 
+                                                        modalConfig.type === 'abc' ? abcOptions : 
+                                                        availableModalClients
+                                                    } 
+                                                    selected={
+                                                        modalConfig.type === 'distribuidores' ? modalDistributorFilter : 
+                                                        modalConfig.type === 'produtos' ? modalProductFilter : 
+                                                        modalConfig.type === 'abc' ? modalAbcFilter : 
+                                                        modalClientFilter
+                                                    } 
                                                     onChange={val => {
                                                         if(modalConfig.type === 'distribuidores') setModalDistributorFilter(val);
                                                         else if(modalConfig.type === 'produtos') setModalProductFilter(val);
                                                         else if(modalConfig.type === 'top') setModalClientFilter(val);
+                                                        else if(modalConfig.type === 'abc') setModalAbcFilter(val);
                                                     }} 
                                                     placeholder="Pesquisar..." 
                                                     searchable={true} 
                                                 />
                                             </div>
-                                        ) : (
+                                        ) : !['abc'].includes(modalConfig.type) && (
                                             <>
                                                 {['capilaridade', 'preco', 'analitico'].includes(modalConfig.type) && (
                                                     <div className="flex flex-col gap-1.5 min-w-[130px]">
@@ -1367,7 +1620,9 @@
                                             </>
                                         )}
 
-                                        <div className="w-[150px]"><CustomMultiSelect label="Filtrar UF" options={modalUfOptionsFormatted} selected={modalUfFilter} onChange={setModalUfFilter} placeholder="Todas" searchable={true} /></div>
+                                        {!['abc'].includes(modalConfig.type) && (
+                                            <div className="w-[150px]"><CustomMultiSelect label="Filtrar UF" options={modalUfOptionsFormatted} selected={modalUfFilter} onChange={setModalUfFilter} placeholder="Todas" searchable={true} /></div>
+                                        )}
                                         
                                         <div className="flex items-end gap-2">
                                             {['novos', 'perdidos', 'alerta'].includes(modalConfig.type) && <div className="flex items-center h-[34px] px-3 bg-blue-50 text-blue-600 rounded-xl border border-blue-100 text-xs font-bold shadow-sm">{Number(filteredModalDataList?.length || 0).toLocaleString('pt-BR')} clientes</div>}
@@ -1378,7 +1633,108 @@
                                     </div>
                                 </div>
                                 <div className="p-0 overflow-y-auto modal-scroll flex-1 bg-slate-50/50">
-                                    {modalConfig.type === 'capilaridade' ? (
+                                    {modalConfig.type === 'abc' && abcData ? (
+                                        <div className="p-6">
+                                            <div className="flex justify-center gap-2 mb-6">
+                                                 <button onClick={() => { setAbcDimension('clientes'); setModalAbcFilter('TODOS'); }} className={`px-5 py-2.5 rounded-xl font-black text-xs shadow-sm transition-all ${abcDimension === 'clientes' ? 'bg-indigo-600 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}>Análise por Clientes</button>
+                                                 <button onClick={() => { setAbcDimension('produtos'); setModalAbcFilter('TODOS'); }} className={`px-5 py-2.5 rounded-xl font-black text-xs shadow-sm transition-all ${abcDimension === 'produtos' ? 'bg-indigo-600 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}>Análise por Produtos</button>
+                                            </div>
+                                            
+                                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+                                                <div className="bg-emerald-50 border border-emerald-100 p-5 rounded-2xl shadow-sm">
+                                                    <h3 className="text-emerald-800 font-black text-lg">Curva A (Top 80%)</h3>
+                                                    <p className="text-emerald-600 text-xs font-bold mt-1">Concentre os esforços aqui. Representam a maior fatia da receita.</p>
+                                                    <div className="mt-4 flex justify-between items-end">
+                                                        <div><p className="text-[10px] font-black text-emerald-600 uppercase mb-1">Total {abcDimension}</p><p className="text-xl font-black text-emerald-800">{abcData.countA}</p></div>
+                                                        <div className="text-right"><p className="text-[10px] font-black text-emerald-600 uppercase mb-1">Faturamento</p><p className="text-xl font-black text-emerald-800">{formatCurrency(abcData.fatA)}</p></div>
+                                                    </div>
+                                                </div>
+                                                <div className="bg-blue-50 border border-blue-100 p-5 rounded-2xl shadow-sm">
+                                                    <h3 className="text-blue-800 font-black text-lg">Curva B (Próx. 15%)</h3>
+                                                    <p className="text-blue-600 text-xs font-bold mt-1">Potencial de crescimento. Tentar realizar cross-sell/up-sell.</p>
+                                                    <div className="mt-4 flex justify-between items-end">
+                                                        <div><p className="text-[10px] font-black text-blue-600 uppercase mb-1">Total {abcDimension}</p><p className="text-xl font-black text-blue-800">{abcData.countB}</p></div>
+                                                        <div className="text-right"><p className="text-[10px] font-black text-blue-600 uppercase mb-1">Faturamento</p><p className="text-xl font-black text-blue-800">{formatCurrency(abcData.fatB)}</p></div>
+                                                    </div>
+                                                </div>
+                                                <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm">
+                                                    <h3 className="text-slate-700 font-black text-lg">Curva C (Últ. 5%)</h3>
+                                                    <p className="text-slate-500 text-xs font-bold mt-1">Geralmente a "cauda longa". Maior custo operacional vs retorno.</p>
+                                                    <div className="mt-4 flex justify-between items-end">
+                                                        <div><p className="text-[10px] font-black text-slate-400 uppercase mb-1">Total {abcDimension}</p><p className="text-xl font-black text-slate-700">{abcData.countC}</p></div>
+                                                        <div className="text-right"><p className="text-[10px] font-black text-slate-400 uppercase mb-1">Faturamento</p><p className="text-xl font-black text-slate-700">{formatCurrency(abcData.fatC)}</p></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm mb-6">
+                                                <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-wider mb-4">Gráfico de Pareto (Visualização Top 50 Itens)</h4>
+                                                <div className="h-[300px] w-full">
+                                                    <ResponsiveContainer width="100%" height="100%">
+                                                        <ComposedChart data={abcData.list.slice(0, 50)} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                                            <XAxis dataKey="name" hide />
+                                                            <YAxis yAxisId="left" tickFormatter={v => `${(v/1000000).toFixed(1)}M`} tick={{fontSize: 10, fontWeight: 600, fill: '#94a3b8'}} axisLine={false} tickLine={false} />
+                                                            <YAxis yAxisId="right" orientation="right" tickFormatter={v => `${v}%`} tick={{fontSize: 10, fontWeight: 600, fill: '#94a3b8'}} axisLine={false} tickLine={false} domain={[0, 100]} />
+                                                            <Tooltip content={<CustomAbcTooltip />} />
+                                                            <Bar yAxisId="left" dataKey="amount" radius={[4, 4, 0, 0]}>
+                                                                {abcData.list.slice(0, 50).map((entry, index) => (
+                                                                    <Cell key={`cell-${index}`} fill={entry.curve === 'A' ? '#10b981' : entry.curve === 'B' ? '#3b82f6' : '#cbd5e1'} />
+                                                                ))}
+                                                            </Bar>
+                                                            <Line yAxisId="right" type="monotone" dataKey="accPct" stroke="#f97316" strokeWidth={3} dot={false} activeDot={{ r: 6 }} />
+                                                        </ComposedChart>
+                                                    </ResponsiveContainer>
+                                                </div>
+                                                <div className="flex justify-center gap-6 mt-4 border-t border-slate-100 pt-4">
+                                                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-emerald-500 rounded-sm"></div><span className="text-xs font-bold text-slate-600">Curva A</span></div>
+                                                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-blue-500 rounded-sm"></div><span className="text-xs font-bold text-slate-600">Curva B</span></div>
+                                                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-slate-300 rounded-sm"></div><span className="text-xs font-bold text-slate-600">Curva C</span></div>
+                                                    <div className="flex items-center gap-2"><div className="w-4 h-1 bg-orange-500 rounded-sm"></div><span className="text-xs font-bold text-slate-600">% Acumulada</span></div>
+                                                </div>
+                                            </div>
+
+                                            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                                                <table className="w-full text-left border-collapse">
+                                                    <thead className="bg-slate-50 border-b border-slate-200">
+                                                        <tr className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                                                            <th className="px-6 py-4 text-center w-16">Rank</th>
+                                                            <th className="px-6 py-4">{abcDimension === 'clientes' ? 'Cliente' : 'Produto'}</th>
+                                                            <th className="px-6 py-4 text-right">Faturamento ({timeMode})</th>
+                                                            <th className="px-6 py-4 text-right">% Repres.</th>
+                                                            <th className="px-6 py-4 text-right">% Acumulada</th>
+                                                            <th className="px-6 py-4 text-center w-28">Curva</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {filteredAbcListForTable.slice(0, 200).map((item) => (
+                                                            <tr key={item.rank} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
+                                                                <td className="px-6 py-3 text-xs font-bold text-slate-400 text-center">#{item.rank}</td>
+                                                                <td className="px-6 py-3 text-xs font-bold text-slate-800 truncate max-w-[300px]" title={item.name}>{item.name}</td>
+                                                                <td className="px-6 py-3 text-xs font-bold text-slate-800 text-right">{formatCurrency(item.amount)}</td>
+                                                                <td className="px-6 py-3 text-xs font-bold text-slate-500 text-right">{item.pct.toFixed(2)}%</td>
+                                                                <td className="px-6 py-3 text-xs font-bold text-fuchsia-600 text-right">{item.accPct.toFixed(2)}%</td>
+                                                                <td className="px-6 py-3 text-center">
+                                                                    <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black ${item.curve === 'A' ? 'bg-emerald-100 text-emerald-700' : item.curve === 'B' ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-600'}`}>
+                                                                        Curva {item.curve}
+                                                                    </span>
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                    {filteredAbcListForTable.length > 200 && (
+                                                        <tfoot className="bg-slate-50">
+                                                            <tr>
+                                                                <td colSpan="6" className="py-3 px-6 text-center text-xs font-bold text-slate-500">
+                                                                    A mostrar os primeiros 200 de {filteredAbcListForTable.length.toLocaleString('pt-BR')} itens.
+                                                                </td>
+                                                            </tr>
+                                                        </tfoot>
+                                                    )}
+                                                </table>
+                                            </div>
+                                        </div>
+                                    ) : modalConfig.type === 'capilaridade' ? (
                                         <div className="p-6 h-[400px] min-w-[600px] flex items-center justify-center">
                                             <ResponsiveContainer width="100%" height="100%">
                                                 <LineChart data={chartDataCapilaridade} margin={{ top: 10, right: 20, left: -10, bottom: 0 }}>
@@ -1399,14 +1755,18 @@
                                             <div className="grid grid-cols-3 gap-4 mb-6">
                                                 <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm relative">
                                                     <div className="flex justify-between items-start">
-                                                        <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Fat. {timeMode} Atual</p>
+                                                        <p className="text-[10px] font-black text-slate-400 uppercase mb-1">
+                                                            {modalEvolucaoMode === 'faturamento' ? `Fat. ${timeMode} Atual` : `Volume ${timeMode} Atual`}
+                                                        </p>
                                                         {getRankBadge(distribuidorDetails.rank)}
                                                     </div>
-                                                    <h3 className="text-xl font-black text-emerald-600 mt-1">{formatCurrency(distribuidorDetails.curTotal)}</h3>
+                                                    <h3 className={`text-xl font-black mt-1 ${modalEvolucaoMode === 'faturamento' ? 'text-emerald-600' : 'text-blue-600'}`}>
+                                                        {modalEvolucaoMode === 'faturamento' ? formatCurrency(distribuidorDetails.curTotal) : `${Number(distribuidorDetails.curQtyTotal || 0).toLocaleString('pt-BR')} un`}
+                                                    </h3>
                                                     <div className="mt-2 flex items-center gap-1 text-[10px] font-bold">
-                                                        {distribuidorDetails.growth !== null ? (
-                                                            <span className={distribuidorDetails.growth >= 0 ? 'text-emerald-500' : 'text-rose-500'}>
-                                                                {distribuidorDetails.growth >= 0 ? '+' : ''}{Number(distribuidorDetails.growth || 0).toFixed(1)}% vs Ant.
+                                                        {(modalEvolucaoMode === 'faturamento' ? distribuidorDetails.growth : distribuidorDetails.growthQty) !== null ? (
+                                                            <span className={(modalEvolucaoMode === 'faturamento' ? distribuidorDetails.growth : distribuidorDetails.growthQty) >= 0 ? 'text-emerald-500' : 'text-rose-500'}>
+                                                                {(modalEvolucaoMode === 'faturamento' ? distribuidorDetails.growth : distribuidorDetails.growthQty) >= 0 ? '+' : ''}{Number((modalEvolucaoMode === 'faturamento' ? distribuidorDetails.growth : distribuidorDetails.growthQty) || 0).toFixed(1)}% vs Ant.
                                                             </span>
                                                         ) : <span className="text-slate-400">Sem histórico</span>}
                                                     </div>
@@ -1417,11 +1777,19 @@
                                                     <p className="text-[10px] text-slate-400 font-bold mt-2">Atendidos neste ciclo</p>
                                                 </div>
                                                 <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                                                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Ticket Médio (PDV)</p>
+                                                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">
+                                                        {modalEvolucaoMode === 'faturamento' ? 'Ticket Médio (PDV)' : 'Volume Médio (PDV)'}
+                                                    </p>
                                                     <h3 className="text-xl font-black text-slate-800 mt-1">
-                                                        {distribuidorDetails.capilaridade > 0 ? formatCurrency(distribuidorDetails.curTotal / distribuidorDetails.capilaridade) : 'R$ 0,00'}
+                                                        {distribuidorDetails.capilaridade > 0 
+                                                            ? (modalEvolucaoMode === 'faturamento' 
+                                                                ? formatCurrency(distribuidorDetails.curTotal / distribuidorDetails.capilaridade) 
+                                                                : `${(distribuidorDetails.curQtyTotal / distribuidorDetails.capilaridade).toFixed(1)} un`) 
+                                                            : (modalEvolucaoMode === 'faturamento' ? 'R$ 0,00' : '0 un')}
                                                     </h3>
-                                                    <p className="text-[10px] text-slate-400 font-bold mt-2">Faturamento / Capilaridade</p>
+                                                    <p className="text-[10px] text-slate-400 font-bold mt-2">
+                                                        {modalEvolucaoMode === 'faturamento' ? 'Faturamento / Capilaridade' : 'Quantidade / Capilaridade'}
+                                                    </p>
                                                 </div>
                                             </div>
 
@@ -1464,7 +1832,7 @@
                                             </div>
 
                                             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                                                <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-wider p-4 border-b border-slate-100 bg-slate-50/50">Top 10 Clientes Deste Distribuidor</h4>
+                                                <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-wider p-4 border-b border-slate-100 bg-slate-50/50">Top 10 Clientes {modalDistributorFilter === 'TODOS' ? '(Visão Geral)' : 'Deste Distribuidor'}</h4>
                                                 <table className="w-full text-left">
                                                     <thead className="bg-white"><tr className="text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100"><th className="px-4 py-3">Cliente</th><th className="px-4 py-3 text-center">UF</th><th className="px-4 py-3 text-right">Faturamento ({timeMode})</th><th className="px-4 py-3 text-right">Qtd. ({timeMode})</th><th className="px-4 py-3 text-right">Repres. (R$)</th></tr></thead>
                                                     <tbody>
@@ -1487,25 +1855,33 @@
                                             <div className="grid grid-cols-3 gap-4 mb-6">
                                                 <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm relative">
                                                     <div className="flex justify-between items-start">
-                                                        <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Volume {timeMode} Atual</p>
+                                                        <p className="text-[10px] font-black text-slate-400 uppercase mb-1">
+                                                            {modalEvolucaoMode === 'faturamento' ? `Receita ${timeMode} Atual` : `Volume ${timeMode} Atual`}
+                                                        </p>
                                                         {getRankBadge(produtoDetails.rank)}
                                                     </div>
-                                                    <h3 className="text-xl font-black text-blue-600 mt-1">{Number(produtoDetails.curQty || 0).toLocaleString('pt-BR')} un</h3>
+                                                    <h3 className={`text-xl font-black mt-1 ${modalEvolucaoMode === 'faturamento' ? 'text-slate-800' : 'text-blue-600'}`}>
+                                                        {modalEvolucaoMode === 'faturamento' ? formatCurrency(produtoDetails.curTotal) : `${Number(produtoDetails.curQty || 0).toLocaleString('pt-BR')} un`}
+                                                    </h3>
                                                     <div className="mt-2 flex items-center gap-1 text-[10px] font-bold">
-                                                        {produtoDetails.growth !== null ? (
-                                                            <span className={produtoDetails.growth >= 0 ? 'text-emerald-500' : 'text-rose-500'}>
-                                                                {produtoDetails.growth >= 0 ? '+' : ''}{Number(produtoDetails.growth || 0).toFixed(1)}% vs Ant.
+                                                        {(modalEvolucaoMode === 'faturamento' ? produtoDetails.growthFat : produtoDetails.growth) !== null ? (
+                                                            <span className={(modalEvolucaoMode === 'faturamento' ? produtoDetails.growthFat : produtoDetails.growth) >= 0 ? 'text-emerald-500' : 'text-rose-500'}>
+                                                                {(modalEvolucaoMode === 'faturamento' ? produtoDetails.growthFat : produtoDetails.growth) >= 0 ? '+' : ''}{Number((modalEvolucaoMode === 'faturamento' ? produtoDetails.growthFat : produtoDetails.growth) || 0).toFixed(1)}% vs Ant.
                                                             </span>
                                                         ) : <span className="text-slate-400">Sem histórico</span>}
                                                     </div>
                                                 </div>
                                                 <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                                                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Receita {timeMode} Atual</p>
-                                                    <h3 className="text-xl font-black text-slate-800 mt-1">{formatCurrency(produtoDetails.curTotal)}</h3>
+                                                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">
+                                                        {modalEvolucaoMode === 'faturamento' ? `Volume ${timeMode} Atual` : `Receita ${timeMode} Atual`}
+                                                    </p>
+                                                    <h3 className={`text-xl font-black mt-1 ${modalEvolucaoMode === 'faturamento' ? 'text-blue-600' : 'text-slate-800'}`}>
+                                                        {modalEvolucaoMode === 'faturamento' ? `${Number(produtoDetails.curQty || 0).toLocaleString('pt-BR')} un` : formatCurrency(produtoDetails.curTotal)}
+                                                    </h3>
                                                     <div className="mt-2 flex items-center gap-1 text-[10px] font-bold">
-                                                        {produtoDetails.growthFat !== null ? (
-                                                            <span className={produtoDetails.growthFat >= 0 ? 'text-emerald-500' : 'text-rose-500'}>
-                                                                {produtoDetails.growthFat >= 0 ? '+' : ''}{Number(produtoDetails.growthFat || 0).toFixed(1)}% vs Ant.
+                                                        {(modalEvolucaoMode === 'faturamento' ? produtoDetails.growth : produtoDetails.growthFat) !== null ? (
+                                                            <span className={(modalEvolucaoMode === 'faturamento' ? produtoDetails.growth : produtoDetails.growthFat) >= 0 ? 'text-emerald-500' : 'text-rose-500'}>
+                                                                {(modalEvolucaoMode === 'faturamento' ? produtoDetails.growth : produtoDetails.growthFat) >= 0 ? '+' : ''}{Number((modalEvolucaoMode === 'faturamento' ? produtoDetails.growth : produtoDetails.growthFat) || 0).toFixed(1)}% vs Ant.
                                                             </span>
                                                         ) : <span className="text-slate-400">Sem histórico</span>}
                                                     </div>
@@ -1520,7 +1896,7 @@
                                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                                                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
                                                     <div className="flex justify-between items-center mb-4">
-                                                        <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Evolução Mensal</h4>
+                                                        <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Evolução de Volume (Mensal)</h4>
                                                         <div className="flex bg-slate-100 p-1 rounded-lg">
                                                             <button onClick={() => setModalEvolucaoMode('faturamento')} className={`px-2 py-0.5 text-[9px] font-bold rounded-md transition-colors ${modalEvolucaoMode === 'faturamento' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>R$ Fat.</button>
                                                             <button onClick={() => setModalEvolucaoMode('quantidade')} className={`px-2 py-0.5 text-[9px] font-bold rounded-md transition-colors ${modalEvolucaoMode === 'quantidade' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>Unidades</button>
@@ -1540,7 +1916,7 @@
                                                 </div>
                                                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
                                                     <div className="flex justify-between items-center mb-4">
-                                                        <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Top Distribuidores (Produto)</h4>
+                                                        <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Top Distribuidores {modalProductFilter === 'TODOS' ? '(Visão Geral)' : 'deste Produto'}</h4>
                                                     </div>
                                                     <div className="h-48 w-full">
                                                         <ResponsiveContainer width="100%" height="100%">
@@ -1556,9 +1932,9 @@
                                             </div>
 
                                             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                                                <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-wider p-4 border-b border-slate-100 bg-slate-50/50">Top 10 Clientes Deste Produto</h4>
+                                                <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-wider p-4 border-b border-slate-100 bg-slate-50/50">Top 10 Clientes {modalProductFilter === 'TODOS' ? '(Visão Geral)' : 'Deste Produto'}</h4>
                                                 <table className="w-full text-left">
-                                                    <thead className="bg-white"><tr className="text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100"><th className="px-4 py-3">Cliente</th><th className="px-4 py-3 text-center">UF</th><th className="px-4 py-3 text-right">Faturamento ({timeMode})</th><th className="px-4 py-3 text-right">Qtd. ({timeMode})</th><th className="px-4 py-3 text-right">Repres. (R$)</th></tr></thead>
+                                                    <thead className="bg-white"><tr className="text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100"><th className="px-4 py-3">Cliente</th><th className="px-4 py-3 text-center">UF</th><th className="px-4 py-3 text-right">Faturamento ({timeMode})</th><th className="px-4 py-3 text-right">Qtd. ({timeMode})</th><th className="px-4 py-3 text-right">Representatividade</th></tr></thead>
                                                     <tbody>
                                                         {(modalEvolucaoMode === 'faturamento' ? produtoDetails.topClientsFat : produtoDetails.topClientsQty).map((c, i) => (
                                                             <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/80 transition-colors">
@@ -1579,33 +1955,45 @@
                                             <div className="grid grid-cols-3 gap-4 mb-6">
                                                 <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm relative">
                                                     <div className="flex justify-between items-start">
-                                                        <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Fat. {timeMode} Atual</p>
+                                                        <p className="text-[10px] font-black text-slate-400 uppercase mb-1">
+                                                            {modalEvolucaoMode === 'faturamento' ? `Fat. ${timeMode} Atual` : `Volume ${timeMode} Atual`}
+                                                        </p>
                                                         {getRankBadge(clienteDetails.rank)}
                                                     </div>
-                                                    <h3 className="text-xl font-black text-fuchsia-600 mt-1">{formatCurrency(clienteDetails.curTotal)}</h3>
+                                                    <h3 className={`text-xl font-black mt-1 ${modalEvolucaoMode === 'faturamento' ? 'text-fuchsia-600' : 'text-blue-600'}`}>
+                                                        {modalEvolucaoMode === 'faturamento' ? formatCurrency(clienteDetails.curTotal) : `${Number(clienteDetails.curQtyTotal || 0).toLocaleString('pt-BR')} un`}
+                                                    </h3>
                                                     <div className="mt-2 flex items-center gap-1 text-[10px] font-bold">
-                                                        {clienteDetails.growth !== null ? (
-                                                            <span className={clienteDetails.growth >= 0 ? 'text-emerald-500' : 'text-rose-500'}>
-                                                                {clienteDetails.growth >= 0 ? '+' : ''}{Number(clienteDetails.growth || 0).toFixed(1)}% vs Ant.
+                                                        {(modalEvolucaoMode === 'faturamento' ? clienteDetails.growth : clienteDetails.growthQty) !== null ? (
+                                                            <span className={(modalEvolucaoMode === 'faturamento' ? clienteDetails.growth : clienteDetails.growthQty) >= 0 ? 'text-emerald-500' : 'text-rose-500'}>
+                                                                {(modalEvolucaoMode === 'faturamento' ? clienteDetails.growth : clienteDetails.growthQty) >= 0 ? '+' : ''}{Number((modalEvolucaoMode === 'faturamento' ? clienteDetails.growth : clienteDetails.growthQty) || 0).toFixed(1)}% vs Ant.
                                                             </span>
                                                         ) : <span className="text-slate-400">Sem histórico</span>}
                                                     </div>
                                                 </div>
                                                 <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                                                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Volume {timeMode} Atual</p>
-                                                    <h3 className="text-xl font-black text-slate-800 mt-1">{Number(clienteDetails.curQtyTotal || 0).toLocaleString('pt-BR')} un</h3>
+                                                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">
+                                                        {modalEvolucaoMode === 'faturamento' ? `Volume ${timeMode} Atual` : `Fat. ${timeMode} Atual`}
+                                                    </p>
+                                                    <h3 className={`text-xl font-black mt-1 ${modalEvolucaoMode === 'faturamento' ? 'text-slate-800' : 'text-fuchsia-600'}`}>
+                                                        {modalEvolucaoMode === 'faturamento' ? `${Number(clienteDetails.curQtyTotal || 0).toLocaleString('pt-BR')} un` : formatCurrency(clienteDetails.curTotal)}
+                                                    </h3>
                                                     <div className="mt-2 flex items-center gap-1 text-[10px] font-bold">
-                                                        {clienteDetails.growthQty !== null ? (
-                                                            <span className={clienteDetails.growthQty >= 0 ? 'text-emerald-500' : 'text-rose-500'}>
-                                                                {clienteDetails.growthQty >= 0 ? '+' : ''}{Number(clienteDetails.growthQty || 0).toFixed(1)}% vs Ant.
+                                                        {(modalEvolucaoMode === 'faturamento' ? clienteDetails.growthQty : clienteDetails.growth) !== null ? (
+                                                            <span className={(modalEvolucaoMode === 'faturamento' ? clienteDetails.growthQty : clienteDetails.growth) >= 0 ? 'text-emerald-500' : 'text-rose-500'}>
+                                                                {(modalEvolucaoMode === 'faturamento' ? clienteDetails.growthQty : clienteDetails.growth) >= 0 ? '+' : ''}{Number((modalEvolucaoMode === 'faturamento' ? clienteDetails.growthQty : clienteDetails.growth) || 0).toFixed(1)}% vs Ant.
                                                             </span>
                                                         ) : <span className="text-slate-400">Sem histórico</span>}
                                                     </div>
                                                 </div>
                                                 <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
                                                     <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Média Mensal</p>
-                                                    <h3 className="text-xl font-black text-slate-800 mt-1">{formatCurrency(clienteDetails.curTotal / 12)}</h3>
-                                                    <p className="text-[10px] text-slate-400 font-bold mt-2">Faturamento / 12 meses</p>
+                                                    <h3 className="text-xl font-black text-slate-800 mt-1">
+                                                        {modalEvolucaoMode === 'faturamento' ? formatCurrency(clienteDetails.curTotal / 12) : `${Math.round(clienteDetails.curQtyTotal / 12).toLocaleString('pt-BR')} un`}
+                                                    </h3>
+                                                    <p className="text-[10px] text-slate-400 font-bold mt-2">
+                                                        {modalEvolucaoMode === 'faturamento' ? 'Faturamento' : 'Quantidade'} / 12 meses
+                                                    </p>
                                                 </div>
                                             </div>
 
@@ -1648,11 +2036,11 @@
                                             </div>
 
                                             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                                                <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-wider p-4 border-b border-slate-100 bg-slate-50/50">Distribuidores que atendem este Cliente</h4>
+                                                <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-wider p-4 border-b border-slate-100 bg-slate-50/50">Distribuidores {modalClientFilter === 'TODOS' ? '(Visão Geral)' : 'que atendem este Cliente'}</h4>
                                                 <table className="w-full text-left">
                                                     <thead className="bg-white"><tr className="text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100"><th className="px-4 py-3">Distribuidor</th><th className="px-4 py-3 text-right">Faturamento ({timeMode})</th><th className="px-4 py-3 text-right">Qtd. ({timeMode})</th><th className="px-4 py-3 text-right">Representatividade (R$)</th></tr></thead>
                                                     <tbody>
-                                                        {(modalEvolucaoMode === 'faturamento' ? clienteDetails.topDistributorsFat : clienteDetails.topDistributorsQty).map((c, i) => (
+                                                        {(modalEvolucaoMode === 'faturamento' ? clienteDetails.topDistributorsFat : clienteDetails.topDistribuidoresQty).map((c, i) => (
                                                             <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/80 transition-colors">
                                                                 <td className="px-4 py-2.5 text-xs font-bold text-slate-700 truncate max-w-[200px]">{c.name}</td>
                                                                 <td className="px-4 py-2.5 text-xs font-bold text-slate-800 text-right">{formatCurrency(c.valor)}</td>
@@ -1703,7 +2091,14 @@
                                         <table className="w-full text-left border-collapse min-w-[1200px]">
                                             <thead className="bg-white sticky top-0 shadow-sm z-10">
                                                 <tr className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
-                                                    <th className="py-4 px-6 border-b border-slate-100 bg-white">Mês/Ano</th>
+                                                    <th className="py-4 px-6 border-b border-slate-100 bg-slate-50 hover:bg-slate-100 cursor-pointer transition-colors" onClick={() => setAnaliticoSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')} title="Clique para inverter a ordem cronológica">
+                                                        <div className="flex items-center gap-1.5 text-blue-600">
+                                                            Data da Transação
+                                                            <div className={`transition-transform duration-200 ${analiticoSortOrder === 'asc' ? 'rotate-180' : ''}`}>
+                                                                <Icon name="ChevronDown" size={14} />
+                                                            </div>
+                                                        </div>
+                                                    </th>
                                                     <th className="py-4 px-6 border-b border-slate-100 bg-white">CNPJ</th>
                                                     <th className="py-4 px-6 border-b border-slate-100 bg-white">Cliente</th>
                                                     <th className="py-4 px-6 border-b border-slate-100 bg-white text-center">UF</th>
@@ -1717,7 +2112,7 @@
                                             <tbody className="text-sm font-semibold text-slate-600 bg-white">
                                                 {baseModalDataFiltered.slice(0, 500).map((d, idx) => (
                                                     <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
-                                                        <td className="py-2.5 px-6 whitespace-nowrap text-xs">{String(d._month).padStart(2, '0')}/{d._year}</td>
+                                                        <td className="py-2.5 px-6 whitespace-nowrap text-xs font-bold text-slate-800">{d._displayDate}</td>
                                                         <td className="py-2.5 px-6 whitespace-nowrap text-xs">{d.cnpj}</td>
                                                         <td className="py-2.5 px-6 truncate max-w-[200px] text-slate-800 font-bold" title={d._customer}>{d._customer}</td>
                                                         <td className="py-2.5 px-6 text-center"><span className="bg-slate-100 text-slate-600 px-2 py-1 rounded-md text-[10px] font-bold">{d._state}</span></td>
@@ -1732,15 +2127,21 @@
                                                     <tr><td colSpan={9} className="py-8 text-center text-slate-400 bg-white">Nenhum registo encontrado com os filtros atuais.</td></tr>
                                                 )}
                                             </tbody>
-                                            {baseModalDataFiltered.length > 500 && (
-                                                <tfoot className="bg-slate-50 sticky bottom-0">
+                                            <tfoot className="bg-slate-50 sticky bottom-0 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+                                                <tr className="text-[11px] font-black text-slate-800 uppercase tracking-wider border-b border-slate-200">
+                                                    <td colSpan="6" className="py-4 px-6 text-right">TOTAL (Seleção Atual):</td>
+                                                    <td className="py-4 px-6 text-right text-slate-800">{totalAnaliticoQtd.toLocaleString('pt-BR')} un</td>
+                                                    <td className="py-4 px-6 text-right text-emerald-600">{formatCurrency(totalAnaliticoFat)}</td>
+                                                    <td className="py-4 px-6 text-right text-blue-600">{formatCurrency(precoMedioAnalitico)}</td>
+                                                </tr>
+                                                {baseModalDataFiltered.length > 500 && (
                                                     <tr>
-                                                        <td colSpan={9} className="py-3 px-6 text-center text-xs font-bold text-slate-500">
-                                                            A mostrar os primeiros 500 registos de um total de {baseModalDataFiltered.length.toLocaleString('pt-BR')}. Refine a sua pesquisa para ver mais dados.
+                                                        <td colSpan="9" className="py-2 px-6 text-center text-[10px] font-bold text-slate-400 bg-slate-100">
+                                                            A mostrar os primeiros 500 registos de um total de {baseModalDataFiltered.length.toLocaleString('pt-BR')} linhas. Exportação ou refinamento de busca recomendado.
                                                         </td>
                                                     </tr>
-                                                </tfoot>
-                                            )}
+                                                )}
+                                            </tfoot>
                                         </table>
                                     ) : (
                                         <table className="w-full text-left border-collapse">
@@ -1787,6 +2188,7 @@
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                         <div>
                             <div className="flex items-center gap-3 mb-1">
+                                <img src="mascote youyou.webp" alt="Youyou" className="w-9 h-9 object-cover bg-white rounded-full p-0.5 border border-slate-200 shadow-sm" onError={(e) => e.target.style.display = 'none'} />
                                 <div className="w-2 h-6 bg-blue-600 rounded-full"></div>
                                 <h1 className="text-2xl font-black tracking-tight text-slate-800 uppercase">Performance Comercial</h1>
                             </div>
@@ -1800,6 +2202,7 @@
 
                         <div className="flex items-center gap-3">
                             {lastUpdate && <div className="text-xs font-bold text-slate-500 bg-white border border-slate-200 px-3 py-1.5 rounded-full flex items-center gap-2"><Icon name="Clock" size={14}/> Atualizado: <span className="text-slate-700">{lastUpdate}</span></div>}
+                            <button onClick={() => openModal('abc')} className="flex items-center gap-2 bg-indigo-50 text-indigo-700 border border-indigo-200 px-4 py-2 rounded-xl text-xs font-bold shadow-sm hover:bg-indigo-100 transition-colors"><Icon name="Target" size={14}/> Curva ABC</button>
                             <button onClick={() => openModal('analitico')} className="flex items-center gap-2 bg-blue-50 text-blue-700 border border-blue-200 px-4 py-2 rounded-xl text-xs font-bold shadow-sm hover:bg-blue-100 transition-colors"><Icon name="List" size={14}/> Visão Analítica</button>
                             <button onClick={() => setShowUploadScreen(true)} className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-md hover:bg-black transition-colors"><Icon name="Upload" size={14}/> CSV Local</button>
                         </div>
@@ -1825,13 +2228,13 @@
                     {/* KPI Cards (Topo) */}
                     <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
                         <div className="bg-white p-4 lg:p-5 rounded-[1.5rem] border border-slate-100 shadow-sm flex flex-col justify-between">
-                            <div><p className="text-slate-400 text-[9px] font-black uppercase mb-1">Faturamento (Seleção)</p><h3 className="text-xl lg:text-2xl font-black text-slate-800">{formatCurrency(statsFiltered.fat)}</h3></div>
+                            <div><p className="text-slate-400 text-[9px] font-black uppercase mb-1">Faturamento ({timeMode})</p><h3 className="text-xl lg:text-2xl font-black text-slate-800">{formatCurrency(metrics.fatCur || 0)}</h3></div>
                             <GrowthBadge growth={metrics.fatGrowth} curLabel={yearComparison?.curLabel} prevLabel={yearComparison?.prevLabel} timeMode={timeMode} />
                         </div>
                         <div onClick={() => openModal('preco')} className="bg-white hover:bg-slate-50 transition-colors p-4 lg:p-5 rounded-[1.5rem] border border-slate-100 shadow-sm flex flex-col justify-between cursor-pointer group">
                             <div>
-                                <div className="flex justify-between items-start mb-1"><p className="text-slate-500/70 text-[9px] font-black uppercase">Preço Médio (Seleção)</p><Icon name="Package" size={12} className="text-slate-300 group-hover:text-blue-500" /></div>
-                                <h3 className="text-xl lg:text-2xl font-black text-blue-600">R$ {Number(statsFiltered.precoMedio || 0).toFixed(2)}</h3>
+                                <div className="flex justify-between items-start mb-1"><p className="text-slate-500/70 text-[9px] font-black uppercase">Preço Médio ({timeMode})</p><Icon name="Package" size={12} className="text-slate-300 group-hover:text-blue-500" /></div>
+                                <h3 className="text-xl lg:text-2xl font-black text-blue-600">R$ {Number(metrics.precoMedioCur || 0).toFixed(2)}</h3>
                                 <p className="text-slate-500 text-[9px] font-bold mt-1">Por unidade faturada</p>
                             </div>
                             <div className="flex flex-col gap-1 mt-auto">
@@ -1841,8 +2244,8 @@
                         </div>
                         <div onClick={() => openModal('capilaridade')} className="bg-white hover:bg-slate-50 transition-colors p-4 lg:p-5 rounded-[1.5rem] border border-slate-100 shadow-sm flex flex-col justify-between cursor-pointer group">
                             <div>
-                                <div className="flex justify-between items-start mb-1"><p className="text-slate-500/70 text-[9px] font-black uppercase">Capilaridade (Seleção)</p><Icon name="TrendingUp" size={12} className="text-slate-300 group-hover:text-blue-500" /></div>
-                                <h3 className="text-xl lg:text-2xl font-black text-slate-800">{Number(statsFiltered.cap || 0).toLocaleString('pt-BR')}</h3>
+                                <div className="flex justify-between items-start mb-1"><p className="text-slate-500/70 text-[9px] font-black uppercase">Capilaridade ({timeMode})</p><Icon name="TrendingUp" size={12} className="text-slate-300 group-hover:text-blue-500" /></div>
+                                <h3 className="text-xl lg:text-2xl font-black text-slate-800">{Number(metrics.capCur || 0).toLocaleString('pt-BR')}</h3>
                                 <p className="text-slate-500 text-[9px] font-bold mt-1">PDVs na seleção</p>
                             </div>
                             <div className="flex flex-col gap-1 mt-auto">
@@ -1907,23 +2310,35 @@
                             </div>
                         </div>
 
-                        <div className="bg-white p-6 rounded-[1.5rem] border border-slate-100 shadow-sm">
-                             <h3 className="text-sm font-black uppercase tracking-widest text-slate-800 flex items-center gap-2 mb-4"><Icon name="MapPin" className="text-blue-600" size={16}/> Representatividade UF ({timeMode})</h3>
-                             <div className="h-[300px] w-full">
+                        <div className="bg-white p-6 rounded-[1.5rem] border border-slate-100 shadow-sm flex flex-col">
+                             <div className="flex justify-between items-center mb-4">
+                                 <h3 className="text-sm font-black uppercase tracking-widest text-slate-800 flex items-center gap-2"><Icon name="List" className="text-blue-600" size={16}/> Representatividade ({timeMode})</h3>
+                             </div>
+                             <div className="flex flex-wrap gap-1.5 mb-4 bg-slate-100 p-1 rounded-xl border border-slate-200 w-fit">
+                                 {['UF', 'Tipo Cliente', 'Unidade', 'Distribuidor'].map(metric => (
+                                     <button 
+                                         key={metric}
+                                         onClick={() => setPieChartMetric(metric)} 
+                                         className={`px-3 py-1.5 text-[9px] font-bold rounded-lg transition-all ${pieChartMetric === metric ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+                                     >
+                                         {metric}
+                                     </button>
+                                 ))}
+                             </div>
+                             <div className="h-[250px] w-full flex-1">
                                 <ResponsiveContainer width="100%" height="100%">
                                     <PieChart>
-                                        <Pie data={dataUF} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={3} label={({ name, percent }) => `${name} ${(Number(percent) * 100).toFixed(1)}%`} labelLine={true}>
-                                            {dataUF.map((e, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                                        <Pie data={pieChartData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={3} label={({ name, percent }) => `${String(name).substring(0,12)}${String(name).length > 12 ? '...' : ''} ${(Number(percent) * 100).toFixed(1)}%`} labelLine={true}>
+                                            {pieChartData.map((e, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
                                         </Pie>
                                         <Tooltip content={<CustomUFTooltip />} />
-                                        <Legend verticalAlign="bottom" height={24} iconType="circle" wrapperStyle={{fontSize: '10px', fontWeight: 'bold', color: '#64748b'}} />
                                     </PieChart>
                                 </ResponsiveContainer>
                              </div>
                         </div>
                     </div>
 
-                    {/* Gráficos Base - 3 colunas exatas da imagem */}
+                    {/* Gráficos Base */}
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                         {/* Top Produtos */}
                         <div className="bg-white p-6 rounded-[1.5rem] border border-slate-100 shadow-sm overflow-hidden flex flex-col group">
